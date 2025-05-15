@@ -7,7 +7,6 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/nerdctl v1.7.7
 	github.com/gin-gonic/gin v1.10.0
-	github.com/labring/layer-squash v0.2.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 )

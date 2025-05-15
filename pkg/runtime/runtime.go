@@ -11,6 +11,7 @@ import (
 	imagesutil "github.com/lingdie/image-squash-server/pkg/images"
 	"github.com/lingdie/image-squash-server/pkg/options"
 	"github.com/lingdie/image-squash-server/pkg/util"
+	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
@@ -30,6 +31,7 @@ import (
 type Runtime struct {
 	client    *containerd.Client
 	namespace string
+	logger    *logrus.Logger
 
 	differ       containerd.DiffService
 	imagestore   images.Store
@@ -44,6 +46,7 @@ func NewRuntime(client *containerd.Client, namespace string) (*Runtime, error) {
 		differ:       client.DiffService(),
 		imagestore:   client.ImageService(),
 		contentstore: client.ContentStore(),
+		logger:       logrus.New(),
 		// use default snapshotter
 		snapshotter: client.SnapshotService(""),
 	}, nil
@@ -79,23 +82,35 @@ func (r *Runtime) Squash(ctx context.Context, opt options.Option) error {
 		return fmt.Errorf("failed to export layer: %w", err)
 	}
 	// generate remaining base image config
+	start := time.Now()
 	baseImage, err := r.generateBaseImageConfig(ctx, image, remainingLayerCount)
 	if err != nil {
 		return err
 	}
+	elapsed := time.Since(start)
+	r.logger.Infof("generate base image config cost %s", elapsed)
 	// commit snapshot
 	snapshotID := identity.ChainID(append(baseImage.RootFS.DiffIDs, diffID)).String()
 	// todo add error handling
+	start = time.Now()
 	r.commitSnapshot(ctx, snapshotID, snapshotKey)
+	elapsed = time.Since(start)
+	r.logger.Infof("commit snapshot cost %s", elapsed)
 	// generate squash image
+	start = time.Now()
 	newImage, err := r.generateSquashImage(ctx, opt, baseImage, image.Manifest.Layers[:remainingLayerCount], diffLayerDesc, diffID)
 	if err != nil {
 		return err
 	}
+	elapsed = time.Since(start)
+	r.logger.Infof("generate squash image cost %s", elapsed)
 	// create squash image
+	start = time.Now()
 	if _, err := r.createSquashImage(ctx, newImage); err != nil {
 		return err
 	}
+	elapsed = time.Since(start)
+	r.logger.Infof("create squash image cost %s", elapsed)
 	return nil
 }
 
@@ -155,15 +170,21 @@ func (r *Runtime) generateSquashLayer(opt options.Option, image *imagesutil.Imag
 
 func (r *Runtime) applyLayersToSnapshot(ctx context.Context, mount []mount.Mount, layers []ocispec.Descriptor) error {
 	for _, layer := range layers {
+		r.logger.Infof("apply layer %s to snapshot", layer.Digest)
+		start := time.Now()
 		if _, err := r.differ.Apply(ctx, layer, mount); err != nil {
 			return err
 		}
+		elapsed := time.Since(start)
+		r.logger.Infof("apply layer %s to snapshot cost %s", layer.Digest, elapsed)
 	}
 	return nil
 }
 
 // createDiff creates a diff from the snapshot
 func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.Descriptor, digest.Digest, error) {
+	r.logger.Infof("create diff for snapshot %s", snapshotName)
+	start := time.Now()
 	newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ)
 	if err != nil {
 		return ocispec.Descriptor{}, "", err
@@ -180,6 +201,8 @@ func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.
 	if err != nil {
 		return ocispec.Descriptor{}, digest.Digest(""), err
 	}
+	elapsed := time.Since(start)
+	r.logger.Infof("create diff for snapshot %s cost %s", snapshotName, elapsed)
 	return ocispec.Descriptor{
 		MediaType: images.MediaTypeDockerSchema2LayerGzip,
 		Digest:    newDesc.Digest,
