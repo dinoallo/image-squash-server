@@ -185,10 +185,25 @@ func (r *Runtime) applyLayersToSnapshot(ctx context.Context, mount []mount.Mount
 func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.Descriptor, digest.Digest, error) {
 	r.logger.Infof("create diff for snapshot %s", snapshotName)
 	start := time.Now()
+
+	// // Create a zstd compressor with high compression level
+	// zstdCompressor := func(dest io.Writer, mediaType string) (io.WriteCloser, error) {
+	// 	// Use zstd with high compression level for better compression ratio
+	// 	// while maintaining good speed
+	// 	encoder, err := zstd.NewWriter(dest, zstd.WithEncoderLevel(zstd.SpeedFastest))
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	return encoder, nil
+	// }
+
+	// Create diff with custom compressor
+	// newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ, diff.WithCompressor(zstdCompressor))
 	newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ)
 	if err != nil {
 		return ocispec.Descriptor{}, "", err
 	}
+
 	info, err := r.contentstore.Info(ctx, newDesc.Digest)
 	if err != nil {
 		return ocispec.Descriptor{}, digest.Digest(""), err
