@@ -6,7 +6,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type Image struct {
+type SquashImage struct {
 	ClientImage containerd.Image
 	Config      ocispec.Image
 	Image       images.Image
