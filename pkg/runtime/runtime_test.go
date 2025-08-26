@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/containerd/nerdctl/pkg/clientutil"
-	"github.com/lingdie/image-squash-server/pkg/options"
-	"github.com/lingdie/image-squash-server/pkg/runtime"
+	"github.com/lingdie/image-rebase-server/pkg/options"
+	"github.com/lingdie/image-rebase-server/pkg/runtime"
 )
 
 func TestRuntime_Squash(t *testing.T) {

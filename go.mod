@@ -1,4 +1,4 @@
-module github.com/lingdie/image-squash-server
+module github.com/lingdie/image-rebase-server
 
 go 1.24.2
 

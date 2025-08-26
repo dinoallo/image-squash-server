@@ -6,8 +6,8 @@ import (
 	"log"
 
 	"github.com/containerd/nerdctl/pkg/clientutil"
-	"github.com/lingdie/image-squash-server/pkg/runtime"
-	"github.com/lingdie/image-squash-server/pkg/server"
+	"github.com/lingdie/image-rebase-server/pkg/runtime"
+	"github.com/lingdie/image-rebase-server/pkg/server"
 )
 
 var containerdAddress string

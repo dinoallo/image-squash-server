@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	imagesutil "github.com/lingdie/image-squash-server/pkg/images"
-	"github.com/lingdie/image-squash-server/pkg/options"
-	"github.com/lingdie/image-squash-server/pkg/util"
+	imagesutil "github.com/lingdie/image-rebase-server/pkg/images"
+	"github.com/lingdie/image-rebase-server/pkg/options"
+	"github.com/lingdie/image-rebase-server/pkg/util"
 	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/containerd"

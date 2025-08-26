@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/lingdie/image-squash-server/pkg/options"
-	"github.com/lingdie/image-squash-server/pkg/runtime"
+	"github.com/lingdie/image-rebase-server/pkg/options"
+	"github.com/lingdie/image-rebase-server/pkg/runtime"
 )
 
 type Request struct {
