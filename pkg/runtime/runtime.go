@@ -316,13 +316,15 @@ func (r *Runtime) generateCommitImageConfig(ctx context.Context, baseImg images.
 }
 
 func NewRuntime(client *containerd.Client, namespace string) (*Runtime, error) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.TraceLevel)
 	return &Runtime{
 		client:       client,
 		namespace:    namespace,
 		differ:       client.DiffService(),
 		imagestore:   client.ImageService(),
 		contentstore: client.ContentStore(),
-		logger:       logrus.New(),
+		logger:       logger,
 		// use default snapshotter
 		snapshotter: client.SnapshotService(""),
 	}, nil

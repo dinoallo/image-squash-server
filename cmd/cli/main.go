@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 
 	"github.com/containerd/nerdctl/pkg/clientutil"
 	"github.com/lingdie/image-rebase-server/pkg/options"
 	"github.com/lingdie/image-rebase-server/pkg/runtime"
+	"github.com/sirupsen/logrus"
 )
 
 var containerdAddress string
@@ -29,7 +29,7 @@ func main() {
 		containerdAddress,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create containerd client: %v", err)
+		logrus.Fatalf("Failed to create containerd client: %v", err)
 	}
 
 	runtime, err := runtime.NewRuntime(
@@ -37,7 +37,7 @@ func main() {
 		namespace,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create runtime: %v", err)
+		logrus.Fatalf("Failed to create runtime: %v", err)
 	}
 
 	err = runtime.Squash(context.Background(), options.Option{
@@ -46,7 +46,7 @@ func main() {
 		SquashLayerCount: squashLayerCount,
 	})
 	if err != nil {
-		log.Fatalf("Failed to squash image: %v", err)
+		logrus.Fatalf("Failed to squash image: %v", err)
 	}
 
 }
