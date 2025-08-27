@@ -332,6 +332,7 @@ func NewRuntime(client *containerd.Client, namespace string) (*Runtime, error) {
 
 func (r *Runtime) Squash(ctx context.Context, opt options.Option) error {
 	var srcName string
+	ctx = namespaces.WithNamespace(ctx, r.namespace)
 	walker := &imagewalker.ImageWalker{
 		Client: r.client,
 		OnFound: func(ctx context.Context, found imagewalker.Found) error {
@@ -351,7 +352,6 @@ func (r *Runtime) Squash(ctx context.Context, opt options.Option) error {
 		return fmt.Errorf("multiple source images found for %q", opt.SourceImage)
 	}
 	opt.SourceImage = srcName
-	ctx = namespaces.WithNamespace(ctx, r.namespace)
 	// init image
 	image, err := r.initImage(ctx, opt)
 	if err != nil {
