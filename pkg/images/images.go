@@ -12,3 +12,10 @@ type SquashImage struct {
 	Image       images.Image
 	Manifest    *ocispec.Manifest
 }
+
+type Image struct {
+	ClientImage containerd.Image
+	Config      ocispec.Image
+	Image       images.Image
+	Manifest    *ocispec.Manifest
+}

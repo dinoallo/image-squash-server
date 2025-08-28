@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lingdie/image-rebase-server/cmd/cli/cmd"
+	"github.com/lingdie/image-manip-server/cmd/cli/cmd"
 	"github.com/sirupsen/logrus"
 )
 

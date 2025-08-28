@@ -8,11 +8,11 @@ var Root = New()
 
 func New() *cobra.Command {
 	var rootCmd = &cobra.Command{
-		Use:   "image-rebase",
-		Short: "git rebase like image utils",
+		Use:   "image-manip",
+		Short: "git like image utils",
 	}
 
-	rootCmd.AddCommand(NewCmdSquash())
+	rootCmd.AddCommand(NewCmdRebase())
 
 	return rootCmd
 }

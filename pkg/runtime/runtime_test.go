@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/containerd/nerdctl/pkg/clientutil"
-	"github.com/lingdie/image-rebase-server/pkg/options"
-	"github.com/lingdie/image-rebase-server/pkg/runtime"
+	"github.com/lingdie/image-manip-server/pkg/options"
+	"github.com/lingdie/image-manip-server/pkg/runtime"
 )
 
 func TestRuntime_Squash(t *testing.T) {
@@ -22,12 +22,12 @@ func TestRuntime_Squash(t *testing.T) {
 		fmt.Println(err)
 		return
 	}
-	opt1 := options.Option{
-		SourceImage:      "docker.io/lingdie/commit:dev",
-		TargetImage:      "docker.io/lingdie/commit:dev-slim",
-		SquashLayerCount: 6,
+	opt1 := options.RebaseOption{
+		OriginalImage: "docker.io/lingdie/commit:dev",
+		NewImage:      "docker.io/lingdie/commit:dev-slim",
+		BaseImage:     "docker.io/library/debian:bookworm-slim",
 	}
-	if err := r.Squash(ctx, opt1); err != nil {
+	if err := r.Rebase(ctx, opt1); err != nil {
 		fmt.Println(err)
 		return
 	}
