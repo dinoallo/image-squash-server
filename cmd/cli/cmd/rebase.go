@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 
+	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/nerdctl/pkg/clientutil"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
@@ -49,7 +50,8 @@ func NewCmdRebase() *cobra.Command {
 			if newImageRef == "" {
 				newImageRef = originalImageRef
 			}
-			err = runtimeObj.Rebase(context.TODO(), options.RebaseOption{
+			ctx := namespaces.WithNamespace(context.TODO(), namespace)
+			err = runtimeObj.Rebase(ctx, options.RebaseOption{
 				OriginalImage: originalImageRef,
 				BaseImage:     baseImageRef,
 				NewBaseImage:  newBaseImageRef,

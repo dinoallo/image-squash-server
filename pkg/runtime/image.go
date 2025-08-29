@@ -10,7 +10,6 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/nerdctl/pkg/idutil/imagewalker"
 	"github.com/containerd/nerdctl/pkg/imgutil"
 	imagesutil "github.com/lingdie/image-manip-server/pkg/images"
@@ -26,7 +25,6 @@ const (
 
 func (r *Runtime) FindImage(ctx context.Context, imageRef string) (string, error) {
 	var srcName string
-	ctx = namespaces.WithNamespace(ctx, r.namespace)
 	walker := &imagewalker.ImageWalker{
 		Client: r.client,
 		OnFound: func(ctx context.Context, found imagewalker.Found) error {
