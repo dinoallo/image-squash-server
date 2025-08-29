@@ -57,10 +57,12 @@ func (r *Runtime) GetImage(ctx context.Context, imageRef string) (*imagesutil.Im
 	if err != nil {
 		return &imagesutil.Image{}, err
 	}
-	targetDesc := containerImage.Target
-	if !images.IsManifestType(targetDesc.MediaType) {
-		return &imagesutil.Image{}, fmt.Errorf("only manifest type is supported :%w", errdefs.ErrInvalidArgument)
-	}
+	//TODO: is this check required?
+	/*
+		targetDesc := containerImage.Target
+			if !images.IsManifestType(targetDesc.MediaType) {
+				return &imagesutil.Image{}, fmt.Errorf("only manifest type is supported :%w", errdefs.ErrInvalidArgument)
+			}*/
 
 	clientImage := containerd.NewImage(r.client, containerImage)
 	manifest, _, err := imgutil.ReadManifest(ctx, clientImage)
