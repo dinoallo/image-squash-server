@@ -22,27 +22,33 @@ import (
 func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 	//TODO: implement me
 	// get the original image
+	r.logger.Infof("start to rebase image %q to new base image %q", opt.OriginalImage, opt.NewBaseImage)
 	origImage, err := r.GetImage(ctx, opt.OriginalImage)
 	if err != nil {
+		r.logger.Errorf("failed to get original image %q: %v", opt.OriginalImage, err)
 		return err
 	}
 	// get the base image
 	baseImage, err := r.GetImage(ctx, opt.BaseImage)
 	if err != nil {
+		r.logger.Errorf("failed to get base image %q: %v", opt.BaseImage, err)
 		return err
 	}
 	layersToRebase, err := r.generateLayersToRebase(origImage, baseImage)
 	if err != nil {
+		r.logger.Errorf("failed to generate layers to rebase: %v", err)
 		return err
 	}
 	// get the new base image
 	newBaseImage, err := r.GetImage(ctx, opt.NewBaseImage)
 	if err != nil {
+		r.logger.Errorf("failed to get new base image %q: %v", opt.NewBaseImage, err)
 		return err
 	}
 	rebaseToDoList := getSquashAll(layersToRebase)
 	newLayers, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseToDoList)
 	if err != nil {
+		r.logger.Errorf("failed to modify layers: %v", err)
 		return err
 	}
 	newBaseImageConfig := newBaseImage.Config
@@ -54,10 +60,12 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 	}
 	newImageConfig, err := r.GenerateImageConfig(ctx, newBaseImage.Image, newBaseImageConfig, diffIDs)
 	if err != nil {
+		r.logger.Errorf("failed to generate new image config: %v", err)
 		return err
 	}
 	commitManifestDesc, _, err := r.WriteContentsForImage(ctx, "overlayfs", newImageConfig, newBaseImage.Manifest.Layers, newLayerDescs)
 	if err != nil {
+		r.logger.Errorf("failed to write contents for image %q: %v", opt.NewImage, err)
 		return err
 	}
 	nImg := images.Image{
@@ -67,11 +75,13 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 	}
 	_, err = r.UpdateImage(ctx, nImg)
 	if err != nil {
+		r.logger.Errorf("failed to update image %q: %v", opt.NewImage, err)
 		return err
 	}
 	cimg := containerd.NewImage(r.client, nImg)
 	// unpack image to the snapshot storage
 	if err := cimg.Unpack(ctx, "overlayfs"); err != nil {
+		r.logger.Errorf("failed to unpack image %q: %v", opt.NewImage, err)
 		return err
 	}
 
