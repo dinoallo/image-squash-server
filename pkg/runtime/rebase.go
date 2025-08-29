@@ -114,7 +114,7 @@ func (r *Runtime) generateLayersToRebase(origImage, baseImage *imagesutil.Image)
 			return nil, fmt.Errorf("image %q is not based on %q (layer %q != layer %q)", origImage.Image.Name, baseImage.Image.Name, oldLayerDigest, origLayerDigest)
 		}
 	}
-	return origImage.Manifest.Layers[len(origLayers)-len(oldBaseLayers):], nil
+	return origImage.Manifest.Layers[len(oldBaseLayers):len(origLayers)], nil
 }
 
 func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layersToRebase []ocispec.Descriptor, rebaseToDoList []string) ([]ocispec.Descriptor, error) {
