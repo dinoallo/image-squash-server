@@ -133,29 +133,32 @@ func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layer
 			}
 			layersToSquash = append(layersToSquash, layer)
 		case "pick":
-			layer, _, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
-			if err != nil {
-				return newLayers, fmt.Errorf("failed to squash layers: %w", err)
+			if len(layersToSquash) > 0 {
+				layer, diffID, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
+				if err != nil {
+					return newLayers, fmt.Errorf("failed to squash layers: %w", err)
+				}
+				newLayers = append(newLayers, layer)
+				parentDiffIDs = append(parentDiffIDs, diffID)
 			}
-			newLayers = append(newLayers, layer)
 			layersToSquash = []ocispec.Descriptor{layer}
 
 		default:
 			return nil, fmt.Errorf("unknown action %q", action)
 		}
 	}
-	layer, _, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
-	if err != nil {
-		return newLayers, fmt.Errorf("failed to squash layers: %w", err)
+	// remember to handle the leftover items in layersToSquash
+	if len(layersToSquash) > 0 {
+		layer, _, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
+		if err != nil {
+			return newLayers, fmt.Errorf("failed to squash layers: %w", err)
+		}
+		newLayers = append(newLayers, layer)
 	}
-	newLayers = append(newLayers, layer)
 	return newLayers, nil
 }
 
 func (r *Runtime) squashLayers(ctx context.Context, layersToSquash []ocispec.Descriptor, parentDiffIDs []digest.Digest) (ocispec.Descriptor, digest.Digest, error) {
-	if len(layersToSquash) < 1 {
-		return ocispec.Descriptor{}, digest.Digest(""), nil
-	}
 	newLayer, diffID, _, err := r.applyLayers(ctx, parentDiffIDs, r.snapshotter, layersToSquash)
 	if err != nil {
 		return ocispec.Descriptor{}, digest.Digest(""), fmt.Errorf("failed to apply layers to snapshot: %w", err)
