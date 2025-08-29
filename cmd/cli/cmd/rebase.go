@@ -19,7 +19,7 @@ func NewCmdRebase() *cobra.Command {
 		newImageRef       string
 	)
 	var rebaseCmd = &cobra.Command{
-		Use:   "rebase",
+		Use:   "rebase ORIGINAL_IMAGE NEW_BASE_IMAGE",
 		Short: "Rebase a container image",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
