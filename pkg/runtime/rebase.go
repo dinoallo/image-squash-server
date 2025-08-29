@@ -7,6 +7,7 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/rootfs"
 	"github.com/containerd/containerd/snapshots"
@@ -46,6 +47,12 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 		return err
 	}
 	rebaseToDoList := getSquashAll(layersToRebase)
+	// Don't gc me and clean the dirty data after 1 hour! (or the temp snapshot may be gced when we are debugging)
+	ctx, done, err := r.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(60*time.Minute))
+	if err != nil {
+		return err
+	}
+	defer done(ctx)
 	newLayers, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseToDoList)
 	if err != nil {
 		r.logger.Errorf("failed to modify layers: %v", err)
