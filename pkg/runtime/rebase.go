@@ -53,24 +53,18 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 		return err
 	}
 	defer done(ctx)
-	newLayers, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseToDoList)
+	newLayers, newDiffIDs, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseToDoList)
 	if err != nil {
 		r.logger.Errorf("failed to modify layers: %v", err)
 		return err
 	}
 	newBaseImageConfig := newBaseImage.Config
-	var diffIDs []digest.Digest
-	var newLayerDescs []ocispec.Descriptor
-	for _, layer := range newLayers {
-		newLayerDescs = append(newLayerDescs, layer)
-		diffIDs = append(diffIDs, layer.Digest)
-	}
-	newImageConfig, err := r.GenerateImageConfig(ctx, newBaseImage.Image, newBaseImageConfig, diffIDs)
+	newImageConfig, err := r.GenerateImageConfig(ctx, newBaseImage.Image, newBaseImageConfig, newDiffIDs)
 	if err != nil {
 		r.logger.Errorf("failed to generate new image config: %v", err)
 		return err
 	}
-	commitManifestDesc, _, err := r.WriteContentsForImage(ctx, "overlayfs", newImageConfig, newBaseImage.Manifest.Layers, newLayerDescs)
+	commitManifestDesc, _, err := r.WriteContentsForImage(ctx, "overlayfs", newImageConfig, newBaseImage.Manifest.Layers, newLayers)
 	if err != nil {
 		r.logger.Errorf("failed to write contents for image %q: %v", opt.NewImage, err)
 		return err
@@ -124,10 +118,11 @@ func (r *Runtime) generateLayersToRebase(origImage, baseImage *imagesutil.Image)
 	return origImage.Manifest.Layers[len(oldBaseLayers):len(origLayers)], nil
 }
 
-func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layersToRebase []ocispec.Descriptor, rebaseToDoList []string) ([]ocispec.Descriptor, error) {
+func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layersToRebase []ocispec.Descriptor, rebaseToDoList []string) ([]ocispec.Descriptor, []digest.Digest, error) {
 	var (
 		layersToSquash = []ocispec.Descriptor{}
 		newLayers      = []ocispec.Descriptor{}
+		newDiffIDs     = []digest.Digest{}
 		parentDiffIDs  = baseImg.RootFS.DiffIDs
 	)
 	for i, layer := range layersToRebase {
@@ -136,33 +131,35 @@ func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layer
 		case "fixup":
 			if i == 0 {
 				// the first layer cannot be fixed up
-				return newLayers, fmt.Errorf("the first layer cannot be fixed up")
+				return newLayers, nil, fmt.Errorf("the first layer cannot be fixed up")
 			}
 			layersToSquash = append(layersToSquash, layer)
 		case "pick":
 			if len(layersToSquash) > 0 {
 				layer, diffID, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
 				if err != nil {
-					return newLayers, fmt.Errorf("failed to squash layers: %w", err)
+					return newLayers, nil, fmt.Errorf("failed to squash layers: %w", err)
 				}
 				newLayers = append(newLayers, layer)
+				newDiffIDs = append(newDiffIDs, diffID)
 				parentDiffIDs = append(parentDiffIDs, diffID)
 			}
 			layersToSquash = []ocispec.Descriptor{layer}
 
 		default:
-			return nil, fmt.Errorf("unknown action %q", action)
+			return nil, nil, fmt.Errorf("unknown action %q", action)
 		}
 	}
 	// remember to handle the leftover items in layersToSquash
 	if len(layersToSquash) > 0 {
-		layer, _, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
+		layer, diffID, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
 		if err != nil {
-			return newLayers, fmt.Errorf("failed to squash layers: %w", err)
+			return newLayers, nil, fmt.Errorf("failed to squash layers: %w", err)
 		}
 		newLayers = append(newLayers, layer)
+		newDiffIDs = append(newDiffIDs, diffID)
 	}
-	return newLayers, nil
+	return newLayers, newDiffIDs, nil
 }
 
 func (r *Runtime) squashLayers(ctx context.Context, layersToSquash []ocispec.Descriptor, parentDiffIDs []digest.Digest) (ocispec.Descriptor, digest.Digest, error) {
