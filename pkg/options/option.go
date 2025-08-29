@@ -19,3 +19,9 @@ type EditOption struct {
 	SourceImage    string   `json:"source_image"`
 	FilesToRemoved []string `json:"files_to_removed"`
 }
+
+type RemoveOption struct {
+	File          string `json:"file"`
+	OriginalImage string `json:"original_image"`
+	NewImage      string `json:"new_image"`
+}
