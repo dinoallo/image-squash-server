@@ -9,6 +9,7 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/mount"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/util"
@@ -26,6 +27,12 @@ func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOption) error {
 		r.logger.Errorf("failed to get original image %q: %v", opt.OriginalImage, err)
 		return err
 	}
+	// Don't gc me and clean the dirty data after 1 hour! (or the temp snapshot may be gced when we are debugging)
+	ctx, done, err := r.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(60*time.Minute))
+	if err != nil {
+		return err
+	}
+	defer done(ctx)
 	var (
 		newLayers  []ocispec.Descriptor
 		newDiffIDs []digest.Digest
