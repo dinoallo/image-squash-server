@@ -13,6 +13,7 @@ func New() *cobra.Command {
 	}
 
 	rootCmd.AddCommand(NewCmdRebase())
+	rootCmd.AddCommand(NewCmdRemove())
 
 	return rootCmd
 }
