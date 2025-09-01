@@ -25,3 +25,8 @@ type RemoveOption struct {
 	OriginalImage string `json:"original_image"`
 	NewImage      string `json:"new_image"`
 }
+
+type VerifyBaseOption struct {
+	OriginalImage string `json:"original_image"`
+	BaseImage     string `json:"base_image"`
+}
