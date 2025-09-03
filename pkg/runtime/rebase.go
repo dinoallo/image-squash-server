@@ -41,13 +41,15 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 		return err
 	}
 	rebaseToDoList := getSquashAll(layersToRebase)
+	// diffIDs for the layers we are going to rebase (needed so we can reuse a single layer without squashing)
+	rebaseDiffIDs := origImage.Config.RootFS.DiffIDs[len(baseImage.Manifest.Layers):]
 	// Don't gc me and clean the dirty data after 1 hour! (or the temp snapshot may be gced when we are debugging)
 	ctx, done, err := r.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(60*time.Minute))
 	if err != nil {
 		return err
 	}
 	defer done(ctx)
-	newLayers, newDiffIDs, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseToDoList)
+	newLayers, newDiffIDs, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseDiffIDs, rebaseToDoList)
 	if err != nil {
 		r.logger.Errorf("failed to modify layers: %v", err)
 		return err
@@ -112,13 +114,43 @@ func (r *Runtime) generateLayersToRebase(origImage, baseImage *imagesutil.Image)
 	return origImage.Manifest.Layers[len(oldBaseLayers):len(origLayers)], nil
 }
 
-func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layersToRebase []ocispec.Descriptor, rebaseToDoList []string) ([]ocispec.Descriptor, []digest.Digest, error) {
+func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layersToRebase []ocispec.Descriptor, rebaseDiffIDs []digest.Digest, rebaseToDoList []string) ([]ocispec.Descriptor, []digest.Digest, error) {
 	var (
 		layersToSquash = []ocispec.Descriptor{}
 		newLayers      = []ocispec.Descriptor{}
 		newDiffIDs     = []digest.Digest{}
 		parentDiffIDs  = baseImg.RootFS.DiffIDs
 	)
+	if len(layersToRebase) != len(rebaseDiffIDs) {
+		return nil, nil, fmt.Errorf("layersToRebase and rebaseDiffIDs length mismatch: %d != %d", len(layersToRebase), len(rebaseDiffIDs))
+	}
+	groupStartIdx := -1 // index in layersToRebase / rebaseDiffIDs where current group started
+
+	flushGroup := func() error {
+		if len(layersToSquash) == 0 {
+			return nil
+		}
+		if len(layersToSquash) == 1 {
+			// Reuse the original single layer & its diffID instead of re-squashing
+			origIdx := groupStartIdx
+			layer := layersToSquash[0]
+			diffID := rebaseDiffIDs[origIdx]
+			newLayers = append(newLayers, layer)
+			newDiffIDs = append(newDiffIDs, diffID)
+			parentDiffIDs = append(parentDiffIDs, diffID)
+			layersToSquash = layersToSquash[:0]
+			return nil
+		}
+		layer, diffID, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
+		if err != nil {
+			return fmt.Errorf("failed to squash layers: %w", err)
+		}
+		newLayers = append(newLayers, layer)
+		newDiffIDs = append(newDiffIDs, diffID)
+		parentDiffIDs = append(parentDiffIDs, diffID)
+		layersToSquash = layersToSquash[:0]
+		return nil
+	}
 	for i, layer := range layersToRebase {
 		action := rebaseToDoList[i]
 		switch action {
@@ -130,28 +162,25 @@ func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layer
 			layersToSquash = append(layersToSquash, layer)
 		case "pick":
 			if len(layersToSquash) > 0 {
-				layer, diffID, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
-				if err != nil {
-					return newLayers, nil, fmt.Errorf("failed to squash layers: %w", err)
+				if err := flushGroup(); err != nil {
+					return newLayers, nil, err
 				}
-				newLayers = append(newLayers, layer)
-				newDiffIDs = append(newDiffIDs, diffID)
-				parentDiffIDs = append(parentDiffIDs, diffID)
 			}
 			layersToSquash = []ocispec.Descriptor{layer}
+			groupStartIdx = i
 
 		default:
 			return nil, nil, fmt.Errorf("unknown action %q", action)
 		}
+		if groupStartIdx == -1 { // first time we add a layer (could be i==0 pick)
+			groupStartIdx = i
+		}
 	}
 	// remember to handle the leftover items in layersToSquash
 	if len(layersToSquash) > 0 {
-		layer, diffID, err := r.squashLayers(ctx, layersToSquash, parentDiffIDs)
-		if err != nil {
-			return newLayers, nil, fmt.Errorf("failed to squash layers: %w", err)
+		if err := flushGroup(); err != nil {
+			return newLayers, nil, err
 		}
-		newLayers = append(newLayers, layer)
-		newDiffIDs = append(newDiffIDs, diffID)
 	}
 	return newLayers, newDiffIDs, nil
 }
