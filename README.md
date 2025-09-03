@@ -2,6 +2,8 @@
 
 This project provides CLI tools for manipulating container images using containerd. The main commands are `rebase` and `remove`.
 
+There is also an internal verification helper (`verify-base`) used to confirm that one image is derived from a specified base image by checking the prefix of its layer chain.
+
 
 ## Rebase Logic
 
@@ -26,6 +28,17 @@ The `remove` command creates a new image by removing a specified file from the o
 5. Generating a new image config and manifest with the new layer.
 6. Writing the new image contents and updating the image reference.
 7. Unpacking the new image for use.
+
+## Verify-Base Logic
+
+The `verify-base` logic (implemented in `Runtime.Verifybase`) checks whether a given image was built on top of an expected base image. It works by:
+
+1. Loading both the candidate (original) image and the claimed base image.
+2. Comparing the sequence of layer digests of the base image with the first N layers of the candidate image (where N is the number of base layers).
+3. Failing if the base has more layers than the candidate or if any digest mismatch occurs.
+4. Succeeding if all base layer digests match in order, meaning the candidate image is based on the provided base.
+
+If successful, the system logs a confirmation message; otherwise it returns an error detailing the mismatch cause.
 
 ## Commands
 
