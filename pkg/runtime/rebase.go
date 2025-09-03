@@ -40,7 +40,12 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 		r.logger.Errorf("failed to get new base image %q: %v", opt.NewBaseImage, err)
 		return err
 	}
-	rebaseToDoList := getSquashAll(layersToRebase)
+	var rebaseToDoList []string
+	if opt.AutoSquash {
+		rebaseToDoList = getSquashAll(layersToRebase)
+	} else {
+		rebaseToDoList = getAllPick(layersToRebase)
+	}
 	// diffIDs for the layers we are going to rebase (needed so we can reuse a single layer without squashing)
 	rebaseDiffIDs := origImage.Config.RootFS.DiffIDs[len(baseImage.Manifest.Layers):]
 	// Don't gc me and clean the dirty data after 1 hour! (or the temp snapshot may be gced when we are debugging)
@@ -93,6 +98,14 @@ func getSquashAll(layers []ocispec.Descriptor) []string {
 		} else {
 			toDoList = append(toDoList, "fixup")
 		}
+	}
+	return toDoList
+}
+
+func getAllPick(layers []ocispec.Descriptor) []string {
+	toDoList := make([]string, len(layers))
+	for i := range layers {
+		toDoList[i] = "pick"
 	}
 	return toDoList
 }

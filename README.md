@@ -7,14 +7,24 @@ There is also an internal verification helper (`verify-base`) used to confirm th
 
 ## Rebase Logic
 
-The `rebase` command replaces the base layers of an image with those from a new base image, while preserving the application layers. The process involves:
+The `rebase` command replaces the base layers of an image with those from a new base image, while preserving the application (non‑base) layers.
 
-1. Fetching the original image, base image, and new base image.
-2. Verifying the original image is based on the specified base image.
-3. Identifying layers to rebase (application layers above the base).
-4. Creating a new image config and manifest using the new base image and rebased layers.
-5. Writing the new image contents and updating the image reference.
-6. Unpacking the new image for use.
+Default behavior (no squashing):
+By default every application layer is retained as-is (no layer squashing). This keeps history granular and avoids unnecessary rebuild cost when only metadata changes. Previously the tool squashed all application layers into one; that behavior is now optional via `--auto-squash`.
+
+Process steps:
+1. Fetch the original image, the (old) base image, and the new base image.
+2. Verify the original image is based on the specified base image (layer digest prefix match).
+3. Identify the application layers to rebase (those above the old base layer count).
+4. (Optional) If `--auto-squash` is set, all application layers are treated as one squash group except the first (git-rebase style: first `pick`, rest `fixup`). Otherwise all are individually `pick`ed.
+5. Generate a new image config & manifest combining the new base layers and (possibly squashed) application layers.
+6. Write new image contents and update/create the target image reference.
+7. Unpack the resulting image for immediate use.
+
+Why keep layers separate by default?
+* Faster incremental distribution (only changed layers are pushed/pulled).
+* Easier debugging/auditing of layer contents.
+Use `--auto-squash` when you explicitly want a single compact application layer (e.g., to reduce metadata noise or for proprietary distribution).
 
 
 ## Remove Logic
@@ -58,6 +68,7 @@ rebase ORIGINAL_IMAGE NEW_BASE_IMAGE [flags]
 - `--namespace`: containerd namespace (default: `k8s.io`)
 - `--base-image`: old base image ref, if not specified, will be the same as the original image
 - `--new-image`: new image ref, if not specified, will be the same as the original image
+- `--auto-squash`: squash all application layers above the base into a single layer (disabled by default)
 
 ### `remove`
 Remove a file from a container image.
@@ -80,6 +91,11 @@ remove FILE IMAGE [flags]
 Rebase an image:
 ```
 rebase my-app:latest ubuntu:22.04 --new-image my-app-rebased:latest
+```
+
+Rebase and squash all application layers into one (previous default behavior):
+```
+rebase my-app:latest ubuntu:22.04 --new-image my-app-rebased:latest --auto-squash
 ```
 
 Remove a file from an image:

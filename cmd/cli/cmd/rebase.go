@@ -18,6 +18,7 @@ func NewCmdRebase() *cobra.Command {
 		newBaseImageRef   string
 		baseImageRef      string
 		newImageRef       string
+		autoSquash        bool
 	)
 	var rebaseCmd = &cobra.Command{
 		Use:   "rebase ORIGINAL_IMAGE NEW_BASE_IMAGE",
@@ -56,6 +57,7 @@ func NewCmdRebase() *cobra.Command {
 				BaseImage:     baseImageRef,
 				NewBaseImage:  newBaseImageRef,
 				NewImage:      newImageRef,
+				AutoSquash:    autoSquash,
 			})
 			if err != nil {
 				return err
@@ -68,5 +70,6 @@ func NewCmdRebase() *cobra.Command {
 	// Positional arguments: originalImageRef, newBaseImageRef
 	rebaseCmd.Flags().StringVar(&baseImageRef, "base-image", "", "old base image ref, if not specified, will be the same as the original image")
 	rebaseCmd.Flags().StringVar(&newImageRef, "new-image", "", "new image ref, if not specified, will be the same as the original image")
+	rebaseCmd.Flags().BoolVar(&autoSquash, "auto-squash", false, "squash all new application layers into one (disabled by default)")
 	return rebaseCmd
 }
