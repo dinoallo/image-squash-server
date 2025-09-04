@@ -9,6 +9,7 @@ const (
 	DefaultAppName           = "image-manip"
 	DefaultContainerdAddress = "unix:///var/run/containerd/containerd.sock"
 	DefaultNamespace         = "k8s.io"
+	DefaultLogLevel          = "info"
 )
 
 var Root = New()
@@ -31,11 +32,14 @@ func processRootCmdFlags(cmd *cobra.Command) options.RootOptions {
 	var (
 		containerdAddress string
 		namespace         string
+		logLevel          string
 	)
 	cmd.PersistentFlags().StringVar(&containerdAddress, "containerd-address", DefaultContainerdAddress, "containerd address")
 	cmd.PersistentFlags().StringVar(&namespace, "namespace", DefaultNamespace, "containerd namespace")
+	cmd.PersistentFlags().StringVar(&logLevel, "log-level", DefaultLogLevel, "log level")
 	return options.RootOptions{
 		ContainerdAddress: containerdAddress,
 		Namespace:         namespace,
+		LogLevel:          logLevel,
 	}
 }

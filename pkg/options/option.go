@@ -25,4 +25,5 @@ type VerifyBaseOptions struct {
 type RootOptions struct {
 	ContainerdAddress string `json:"containerd_address"`
 	Namespace         string `json:"namespace"`
+	LogLevel          string `json:"log_level"`
 }

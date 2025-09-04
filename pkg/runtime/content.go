@@ -14,6 +14,10 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+var (
+	emptyDigest = digest.Digest("")
+)
+
 func (r *Runtime) WriteContentsForImage(ctx context.Context, snName string, newConfig ocispec.Image, baseImageLayers []ocispec.Descriptor, newLayers []ocispec.Descriptor) (ocispec.Descriptor, digest.Digest, error) {
 	// write image contents to content store
 	newConfigJSON, err := json.Marshal(newConfig)

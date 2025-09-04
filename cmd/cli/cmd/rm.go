@@ -1,10 +1,6 @@
 package cmd
 
 import (
-	"context"
-
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/nerdctl/pkg/clientutil"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
 	"github.com/spf13/cobra"
@@ -33,20 +29,14 @@ func removeAction(cmd *cobra.Command, args []string) error {
 	if opts.NewImage == "" {
 		opts.NewImage = opts.OriginalImage
 	}
-	containerdClient, _, _, err := clientutil.NewClient(
-		context.TODO(),
-		opts.Namespace,
-		opts.ContainerdAddress,
+	runtimeObj, err := runtime.NewRuntime(
+		cmd.Context(),
+		opts.RootOptions,
 	)
 	if err != nil {
 		return err
 	}
-	runtimeObj, err := runtime.NewRuntime(containerdClient)
-	if err != nil {
-		return err
-	}
-	ctx := namespaces.WithNamespace(context.TODO(), opts.Namespace)
-	if err := runtimeObj.Remove(ctx, opts); err != nil {
+	if err := runtimeObj.Remove(opts); err != nil {
 		return err
 	}
 	return nil

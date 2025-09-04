@@ -2,33 +2,31 @@ package runtime_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
-	"github.com/containerd/nerdctl/pkg/clientutil"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
 )
 
-func TestRuntime_Squash(t *testing.T) {
-	client, ctx, cancel, err := clientutil.NewClient(context.Background(), "default", "unix:///var/run/containerd/containerd.sock")
+func TestRuntime_Rebase(t *testing.T) {
+	rootOpts := options.RootOptions{
+		ContainerdAddress: "unix:///var/run/containerd/containerd.sock",
+		Namespace:         "k8s.io",
+	}
+	r, err := runtime.NewRuntime(context.TODO(), rootOpts)
 	if err != nil {
-		fmt.Println(err)
+		t.Errorf("NewRuntime() error = %v", err)
 		return
 	}
-	defer cancel()
-	r, err := runtime.NewRuntime(client)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	opt1 := options.RebaseOptions{
+	rebaseOpts := options.RebaseOptions{
+		RootOptions:   rootOpts,
 		OriginalImage: "docker.io/lingdie/commit:dev",
 		NewImage:      "docker.io/lingdie/commit:dev-slim",
 		BaseImage:     "docker.io/library/debian:bookworm-slim",
+		AutoSquash:    true,
 	}
-	if err := r.Rebase(ctx, opt1); err != nil {
-		fmt.Println(err)
+	if err := r.Rebase(rebaseOpts); err != nil {
+		t.Errorf("Rebase() error = %v", err)
 		return
 	}
 }

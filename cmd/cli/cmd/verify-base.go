@@ -1,10 +1,6 @@
 package cmd
 
 import (
-	"context"
-
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/nerdctl/pkg/clientutil"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
 	"github.com/spf13/cobra"
@@ -30,21 +26,14 @@ func verifyBaseAction(cmd *cobra.Command, args []string) error {
 
 	verifyBaseOptions.OriginalImage = originalImageRef
 	verifyBaseOptions.BaseImage = baseImageRef
-
-	containerdClient, _, _, err := clientutil.NewClient(
-		context.TODO(),
-		verifyBaseOptions.RootOptions.Namespace,
-		verifyBaseOptions.RootOptions.ContainerdAddress,
+	runtimeObj, err := runtime.NewRuntime(
+		cmd.Context(),
+		verifyBaseOptions.RootOptions,
 	)
 	if err != nil {
 		return err
 	}
-	runtimeObj, err := runtime.NewRuntime(containerdClient)
-	if err != nil {
-		return err
-	}
-	ctx := namespaces.WithNamespace(context.TODO(), verifyBaseOptions.RootOptions.Namespace)
-	if err := runtimeObj.Verifybase(ctx, verifyBaseOptions); err != nil {
+	if err := runtimeObj.Verifybase(verifyBaseOptions); err != nil {
 		return err
 	}
 	return nil
