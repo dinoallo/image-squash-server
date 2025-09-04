@@ -15,9 +15,8 @@ const (
 )
 
 type Runtime struct {
-	client    *containerd.Client
-	namespace string
-	logger    *logrus.Logger
+	client *containerd.Client
+	logger *logrus.Logger
 
 	differ       containerd.DiffService
 	imagestore   images.Store
@@ -25,12 +24,11 @@ type Runtime struct {
 	snapshotter  snapshots.Snapshotter
 }
 
-func NewRuntime(client *containerd.Client, namespace string) (*Runtime, error) {
+func NewRuntime(client *containerd.Client) (*Runtime, error) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.TraceLevel)
 	return &Runtime{
 		client:       client,
-		namespace:    namespace,
 		differ:       client.DiffService(),
 		imagestore:   client.ImageService(),
 		contentstore: client.ContentStore(),

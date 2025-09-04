@@ -1,14 +1,7 @@
 package options
 
-type SquashOption struct {
-	SourceImage string `json:"source_image"`
-	TargetImage string `json:"target_image"`
-
-	SquashLayerCount  int    `json:"squash_layer_count"`
-	SquashLayerDigest string `json:"squash_layer_digest"`
-}
-
-type RebaseOption struct {
+type RebaseOptions struct {
+	RootOptions
 	BaseImage     string `json:"base_image"`
 	NewBaseImage  string `json:"new_base_image"`
 	OriginalImage string `json:"original_image"`
@@ -16,18 +9,20 @@ type RebaseOption struct {
 	AutoSquash    bool   `json:"auto_squash"`
 }
 
-type EditOption struct {
-	SourceImage    string   `json:"source_image"`
-	FilesToRemoved []string `json:"files_to_removed"`
-}
-
-type RemoveOption struct {
+type RemoveOptions struct {
+	RootOptions
 	File          string `json:"file"`
 	OriginalImage string `json:"original_image"`
 	NewImage      string `json:"new_image"`
 }
 
-type VerifyBaseOption struct {
+type VerifyBaseOptions struct {
+	RootOptions
 	OriginalImage string `json:"original_image"`
 	BaseImage     string `json:"base_image"`
+}
+
+type RootOptions struct {
+	ContainerdAddress string `json:"containerd_address"`
+	Namespace         string `json:"namespace"`
 }

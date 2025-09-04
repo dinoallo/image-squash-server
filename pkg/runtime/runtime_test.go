@@ -17,12 +17,12 @@ func TestRuntime_Squash(t *testing.T) {
 		return
 	}
 	defer cancel()
-	r, err := runtime.NewRuntime(client, "default")
+	r, err := runtime.NewRuntime(client)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	opt1 := options.RebaseOption{
+	opt1 := options.RebaseOptions{
 		OriginalImage: "docker.io/lingdie/commit:dev",
 		NewImage:      "docker.io/lingdie/commit:dev-slim",
 		BaseImage:     "docker.io/library/debian:bookworm-slim",

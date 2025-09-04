@@ -4,7 +4,6 @@ go 1.24.2
 
 require (
 	github.com/containerd/containerd v1.7.27
-	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/nerdctl v1.7.7
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -22,6 +21,7 @@ require (
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.9.0 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
+	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/imgcrypt v1.1.9 // indirect

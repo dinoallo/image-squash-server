@@ -11,55 +11,49 @@ import (
 )
 
 func NewCmdRemove() *cobra.Command {
-	var (
-		namespace         string
-		containerdAddress string
-		originalImageRef  string
-		newImageRef       string
-	)
 	var removeCmd = &cobra.Command{
 		Use:   "remove FILE IMAGE",
 		Short: "Remove a file from a container image",
 		Args:  cobra.MinimumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			file := args[0]
-			originalImageRef = args[1]
-
-			//TODO: reuse runtime and containerd client
-			containerdClient, _, _, err := clientutil.NewClient(
-				context.TODO(),
-				namespace,
-				containerdAddress,
-			)
-			if err != nil {
-				return err
-			}
-
-			runtimeObj, err := runtime.NewRuntime(
-				containerdClient,
-				namespace,
-			)
-			if err != nil {
-				return err
-			}
-			if newImageRef == "" {
-				newImageRef = originalImageRef
-			}
-			ctx := namespaces.WithNamespace(context.TODO(), namespace)
-			err = runtimeObj.Remove(ctx, options.RemoveOption{
-				File:          file,
-				OriginalImage: originalImageRef,
-				NewImage:      newImageRef,
-			})
-			if err != nil {
-				return err
-			}
-			return nil
-		},
+		RunE:  removeAction,
 	}
-	removeCmd.Flags().StringVar(&containerdAddress, "containerd-address", "unix:///var/run/containerd/containerd.sock", "containerd address")
-	removeCmd.Flags().StringVar(&namespace, "namespace", "k8s.io", "containerd namespace")
-	// Positional arguments: originalImageRef, newBaseImageRef
-	removeCmd.Flags().StringVar(&newImageRef, "new-image", "", "new image ref, if not specified, will be the same as the original image")
 	return removeCmd
+}
+
+func removeAction(cmd *cobra.Command, args []string) error {
+	var (
+		file             = args[0]
+		originalImageRef = args[1]
+	)
+
+	opts := processRemoveCmdFlags(cmd)
+	opts.File = file
+	opts.OriginalImage = originalImageRef
+	if opts.NewImage == "" {
+		opts.NewImage = opts.OriginalImage
+	}
+	containerdClient, _, _, err := clientutil.NewClient(
+		context.TODO(),
+		opts.Namespace,
+		opts.ContainerdAddress,
+	)
+	if err != nil {
+		return err
+	}
+	runtimeObj, err := runtime.NewRuntime(containerdClient)
+	if err != nil {
+		return err
+	}
+	ctx := namespaces.WithNamespace(context.TODO(), opts.Namespace)
+	if err := runtimeObj.Remove(ctx, opts); err != nil {
+		return err
+	}
+	return nil
+}
+
+func processRemoveCmdFlags(cmd *cobra.Command) options.RemoveOptions {
+	var newImageRef string
+	cmd.Flags().StringVar(&newImageRef, "new-image", "", "new image ref, if not specified, will be the same as the original image")
+	root := processRootCmdFlags(cmd)
+	return options.RemoveOptions{RootOptions: root, NewImage: newImageRef}
 }
