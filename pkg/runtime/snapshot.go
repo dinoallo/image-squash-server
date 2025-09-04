@@ -16,6 +16,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// TODO: should we just use rootfs.ApplyLayers?
 // createSnapshot creates a new snapshot from the parent specified by parentDiffIDs, and apply the given layers to it.
 func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Digest, sn snapshots.Snapshotter, layers []ocispec.Descriptor) (
 	ocispec.Descriptor, digest.Digest, string, error) {
