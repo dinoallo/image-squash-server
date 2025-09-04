@@ -17,6 +17,7 @@ func NewCmdVerifyBase() *cobra.Command {
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  verifyBaseAction,
 	}
+	_ = processVerifyBaseCmdFlags(verifyBaseCmd)
 	return verifyBaseCmd
 }
 

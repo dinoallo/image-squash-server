@@ -17,6 +17,7 @@ func NewCmdRemove() *cobra.Command {
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  removeAction,
 	}
+	_ = processRemoveCmdFlags(removeCmd)
 	return removeCmd
 }
 
