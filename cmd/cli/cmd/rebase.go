@@ -22,6 +22,7 @@ func NewCmdRebase() *cobra.Command {
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  rebaseAction,
 	}
+	_ = processRebaseCmdFlags(rebaseCmd)
 
 	return rebaseCmd
 }

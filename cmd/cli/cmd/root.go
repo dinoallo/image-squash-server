@@ -18,6 +18,7 @@ func New() *cobra.Command {
 		Use:   "image-manip",
 		Short: "git like image utils",
 	}
+	_ = processRootCmdFlags(rootCmd)
 
 	rootCmd.AddCommand(NewCmdRebase())
 	rootCmd.AddCommand(NewCmdRemove())
