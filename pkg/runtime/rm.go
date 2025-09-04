@@ -18,8 +18,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOptions) error {
-	//TODO: implement me
+func (r *Runtime) Remove(opt options.RemoveOptions) error {
+	ctx := r.runtimeCtx
 	// get the original image
 	r.logger.Infof("start to remove file %q from image %q", opt.File, opt.OriginalImage)
 	origImage, err := r.GetImage(ctx, opt.OriginalImage)

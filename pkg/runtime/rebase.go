@@ -14,8 +14,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
-	//TODO: implement me
+func (r *Runtime) Rebase(opt options.RebaseOptions) error {
+	ctx := r.runtimeCtx
 	// get the original image
 	r.logger.Infof("start to rebase image %q to new base image %q", opt.OriginalImage, opt.NewBaseImage)
 	origImage, err := r.GetImage(ctx, opt.OriginalImage)

@@ -1,10 +1,6 @@
 package cmd
 
 import (
-	"context"
-
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/nerdctl/pkg/clientutil"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
 	"github.com/spf13/cobra"
@@ -47,26 +43,16 @@ func rebaseAction(cmd *cobra.Command, args []string) error {
 	if rebaseOptions.NewImage == "" {
 		rebaseOptions.NewImage = originalImageRef
 	}
-
-	//TODO: reuse runtime and containerd client
-	containerdClient, _, _, err := clientutil.NewClient(
-		context.TODO(),
-		rebaseOptions.Namespace,
-		rebaseOptions.ContainerdAddress,
-	)
-	if err != nil {
-		return err
-	}
-
+	// init the runtime
 	runtimeObj, err := runtime.NewRuntime(
-		containerdClient,
+		cmd.Context(),
+		rebaseOptions.RootOptions,
 	)
 	if err != nil {
 		return err
 	}
-	ctx := namespaces.WithNamespace(context.TODO(), rebaseOptions.Namespace)
-	err = runtimeObj.Rebase(ctx, rebaseOptions)
-	if err != nil {
+	// do the rebase
+	if err := runtimeObj.Rebase(rebaseOptions); err != nil {
 		return err
 	}
 	return nil
