@@ -6,7 +6,7 @@ import (
 	"github.com/lingdie/image-manip-server/pkg/options"
 )
 
-func (r *Runtime) Verifybase(ctx context.Context, opt options.VerifyBaseOption) error {
+func (r *Runtime) Verifybase(ctx context.Context, opt options.VerifyBaseOptions) error {
 	// Implementation goes here
 	origImage, err := r.GetImage(ctx, opt.OriginalImage)
 	if err != nil {
