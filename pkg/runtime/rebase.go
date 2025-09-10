@@ -199,7 +199,7 @@ func (r *Runtime) modifyLayers(ctx context.Context, baseImg ocispec.Image, layer
 }
 
 func (r *Runtime) squashLayers(ctx context.Context, layersToSquash []ocispec.Descriptor, parentDiffIDs []digest.Digest) (ocispec.Descriptor, digest.Digest, error) {
-	newLayer, diffID, _, err := r.createSnapshot(ctx, parentDiffIDs, r.snapshotter, layersToSquash)
+	newLayer, diffID, _, err := r.createSnapshot(ctx, parentDiffIDs, layersToSquash)
 	if err != nil {
 		return ocispec.Descriptor{}, digest.Digest(""), fmt.Errorf("failed to apply layers to snapshot: %w", err)
 	}

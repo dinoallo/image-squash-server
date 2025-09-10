@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/containerd/containerd/diff"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/rootfs"
+	"github.com/containerd/containerd/pkg/cleanup"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/lingdie/image-manip-server/pkg/util"
 	"github.com/opencontainers/go-digest"
@@ -18,43 +19,34 @@ import (
 
 // TODO: should we just use rootfs.ApplyLayers?
 // createSnapshot creates a new snapshot from the parent specified by parentDiffIDs, and apply the given layers to it.
-func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Digest, sn snapshots.Snapshotter, layers []ocispec.Descriptor) (
+func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Digest, layers []ocispec.Descriptor) (
 	ocispec.Descriptor, digest.Digest, string, error) {
 	var (
 		key          = util.UniquePart()
-		parent       = identity.ChainID(parentDiffIDs).String()
 		newLayerDesc ocispec.Descriptor
 		diffID       digest.Digest
 		snapshotID   string
-		retErr       error
+		ancestor     = identity.ChainID(parentDiffIDs).String()
+		child        string
+		sn           = r.snapshotter
 	)
-
-	m, err := sn.Prepare(ctx, key, parent)
-	if err != nil {
-		return newLayerDesc, diffID, snapshotID, err
-	}
-
-	defer func() {
-		if retErr != nil {
-			// NOTE: the snapshotter should be hold by lease. Even
-			// if the cleanup fails, the containerd gc can delete it.
-			if err := sn.Remove(ctx, key); err != nil {
-				r.logger.Warnf("failed to cleanup aborted apply %s: %v", key, err)
-			}
-		}
-	}()
 	for _, layer := range layers {
-		err = r.applyLayerToMount(ctx, m, layer)
-		if err != nil {
-			r.logger.Warnf("failed to apply layer to mount %q: %v", m, err)
-			return newLayerDesc, diffID, snapshotID, err
-		}
+		child = identity.ChainID(append(parentDiffIDs, layer.Digest)).String()
 	}
-	newLayerDesc, diffID, err = r.createDiff(ctx, key)
+
+	newLayerDesc, diffID, err := r.createDiff(ctx, child, ancestor)
 	if err != nil {
 		return newLayerDesc, diffID, snapshotID, fmt.Errorf("failed to export layer: %w", err)
 	}
-
+	m, err := sn.Prepare(ctx, key, ancestor)
+	if err != nil {
+		return newLayerDesc, diffID, snapshotID, fmt.Errorf("failed to prepare snapshot: %w", err)
+	}
+	applyErr := r.applyLayerToMount(ctx, m, newLayerDesc)
+	if applyErr != nil {
+		sn.Remove(ctx, key)
+		return newLayerDesc, diffID, snapshotID, fmt.Errorf("failed to apply layer to mount: %w", applyErr)
+	}
 	// commit snapshot
 	snapshotID = identity.ChainID(append(parentDiffIDs, diffID)).String()
 
@@ -78,25 +70,9 @@ func (r *Runtime) applyLayerToMount(ctx context.Context, mount []mount.Mount, la
 	return nil
 }
 
-// createDiff creates a diff between a snapshot and its parent
-func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.Descriptor, digest.Digest, error) {
-	r.logger.Infof("create diff for snapshot %s", snapshotName)
+func (r *Runtime) createDiff(ctx context.Context, child, ancestor string) (ocispec.Descriptor, digest.Digest, error) {
 	start := time.Now()
-
-	// // Create a zstd compressor with high compression level
-	// zstdCompressor := func(dest io.Writer, mediaType string) (io.WriteCloser, error) {
-	// 	// Use zstd with high compression level for better compression ratio
-	// 	// while maintaining good speed
-	// 	encoder, err := zstd.NewWriter(dest, zstd.WithEncoderLevel(zstd.SpeedFastest))
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	return encoder, nil
-	// }
-
-	// Create diff with custom compressor
-	// newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ, diff.WithCompressor(zstdCompressor))
-	newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ)
+	newDesc, err := r.CreateDiff(ctx, child, ancestor, r.differ)
 	if err != nil {
 		return ocispec.Descriptor{}, "", err
 	}
@@ -113,10 +89,46 @@ func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.
 		return ocispec.Descriptor{}, digest.Digest(""), err
 	}
 	elapsed := time.Since(start)
-	r.logger.Infof("create diff for snapshot %s cost %s", snapshotName, elapsed)
+	r.logger.Infof("create diff cost %s", elapsed)
 	return ocispec.Descriptor{
 		MediaType: images.MediaTypeDockerSchema2LayerGzip,
 		Digest:    newDesc.Digest,
 		Size:      info.Size,
 	}, diffID, nil
+}
+
+func (r *Runtime) CreateDiff(ctx context.Context, child, ancestor string, d diff.Comparer, opts ...diff.Opt) (ocispec.Descriptor, error) {
+	var (
+		sn = r.snapshotter
+	)
+	lowerKey := fmt.Sprintf("%s-ancestor-view-%s", ancestor, util.UniquePart())
+	lower, err := sn.View(ctx, lowerKey, ancestor)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
+	defer cleanup.Do(ctx, func(ctx context.Context) {
+		sn.Remove(ctx, lowerKey)
+	})
+	info, err := sn.Stat(ctx, child)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
+
+	var upper []mount.Mount
+	if info.Kind == snapshots.KindActive {
+		upper, err = sn.Mounts(ctx, child)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+	} else {
+		upperKey := fmt.Sprintf("%s-child-view-%s", child, util.UniquePart())
+		upper, err = sn.View(ctx, upperKey, child)
+		if err != nil {
+			return ocispec.Descriptor{}, err
+		}
+		defer cleanup.Do(ctx, func(ctx context.Context) {
+			sn.Remove(ctx, upperKey)
+		})
+	}
+	return d.Compare(ctx, upper, lower, opts...)
 }

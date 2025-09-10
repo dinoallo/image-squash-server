@@ -104,7 +104,7 @@ func (r *Runtime) createRemovalLayer(ctx context.Context, origImage ocispec.Imag
 		return ocispec.Descriptor{}, digest.Digest(""), err
 	}
 	// create a diff from the modified rootfs
-	newLayer, diffID, err := r.createDiff(ctx, key)
+	newLayer, diffID, err := r.createDiff(ctx, key, parent.String())
 	if err != nil {
 		r.logger.Errorf("failed to create diff for snapshot %q: %v", key, err)
 		return ocispec.Descriptor{}, digest.Digest(""), err
