@@ -130,5 +130,5 @@ func (r *Runtime) CreateDiff(ctx context.Context, child, ancestor string, d diff
 			sn.Remove(ctx, upperKey)
 		})
 	}
-	return d.Compare(ctx, upper, lower, opts...)
+	return d.Compare(ctx, lower, upper, opts...)
 }
