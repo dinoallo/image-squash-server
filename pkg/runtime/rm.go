@@ -77,7 +77,7 @@ func (r *Runtime) createRemovalLayer(ctx context.Context, origImage ocispec.Imag
 	var (
 		key           = fmt.Sprintf("file-removal-%s", util.UniquePart())
 		parentDiffIDs = origImage.RootFS.DiffIDs
-		parent        = identity.ChainID(origImage.RootFS.DiffIDs)
+		parent        = identity.ChainID(origImage.RootFS.DiffIDs).String()
 	)
 	// create mount target to mount the rootfs
 	mountTarget, err := os.MkdirTemp(os.Getenv("XDG_RUNTIME_DIR"), "remove-file-")
@@ -87,7 +87,7 @@ func (r *Runtime) createRemovalLayer(ctx context.Context, origImage ocispec.Imag
 	}
 	defer os.RemoveAll(mountTarget)
 	// prepare a temporary rootfs
-	mounts, err := r.snapshotter.Prepare(ctx, key, parent.String())
+	mounts, err := r.snapshotter.Prepare(ctx, key, parent)
 	if err != nil {
 		r.logger.Errorf("failed to prepare snapshot %q: %v", key, err)
 		return ocispec.Descriptor{}, digest.Digest(""), err
@@ -104,7 +104,7 @@ func (r *Runtime) createRemovalLayer(ctx context.Context, origImage ocispec.Imag
 		return ocispec.Descriptor{}, digest.Digest(""), err
 	}
 	// create a diff from the modified rootfs
-	newLayer, diffID, err := r.createDiff(ctx, key, parent.String())
+	newLayer, diffID, err := r.createDiff(ctx, key, parent)
 	if err != nil {
 		r.logger.Errorf("failed to create diff for snapshot %q: %v", key, err)
 		return ocispec.Descriptor{}, digest.Digest(""), err
