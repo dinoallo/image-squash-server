@@ -18,6 +18,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 	//TODO: implement me
 	// get the original image
 	r.logger.Infof("start to rebase image %q to new base image %q", opt.OriginalImage, opt.NewBaseImage)
+	rebaseStart := time.Now()
 	origImage, err := r.GetImage(ctx, opt.OriginalImage)
 	if err != nil {
 		r.logger.Errorf("failed to get original image %q: %v", opt.OriginalImage, err)
@@ -54,22 +55,29 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 		return err
 	}
 	defer done(ctx)
+	modifyLayerStart := time.Now()
 	newLayers, newDiffIDs, err := r.modifyLayers(ctx, newBaseImage.Config, layersToRebase, rebaseDiffIDs, rebaseToDoList)
 	if err != nil {
 		r.logger.Errorf("failed to modify layers: %v", err)
 		return err
 	}
+	modifyLayerElapsed := time.Since(modifyLayerStart)
+	r.logger.Infof("modify layers took %s", modifyLayerElapsed)
+	// generate new image config
 	newBaseImageConfig := newBaseImage.Config
 	newImageConfig, err := r.GenerateImageConfig(ctx, newBaseImage.Image, newBaseImageConfig, newDiffIDs)
 	if err != nil {
 		r.logger.Errorf("failed to generate new image config: %v", err)
 		return err
 	}
+	writeContentsForImageStart := time.Now()
 	commitManifestDesc, _, err := r.WriteContentsForImage(ctx, "overlayfs", newImageConfig, newBaseImage.Manifest.Layers, newLayers)
 	if err != nil {
 		r.logger.Errorf("failed to write contents for image %q: %v", opt.NewImage, err)
 		return err
 	}
+	writeContentsForImageElapsed := time.Since(writeContentsForImageStart)
+	r.logger.Infof("write contents for image took %s", writeContentsForImageElapsed)
 	nImg := images.Image{
 		Name:      opt.NewImage,
 		Target:    commitManifestDesc,
@@ -86,7 +94,8 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOption) error {
 		r.logger.Errorf("failed to unpack image %q: %v", opt.NewImage, err)
 		return err
 	}
-
+	rebaseElapsed := time.Since(rebaseStart)
+	r.logger.Infof("rebase image %q to new base image %q successfully, new image: %q, cost %s", opt.OriginalImage, opt.NewBaseImage, opt.NewImage, rebaseElapsed)
 	return nil
 }
 

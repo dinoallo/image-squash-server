@@ -43,6 +43,7 @@ func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Dig
 			}
 		}
 	}()
+	applyLayersStart := time.Now()
 	for _, layer := range layers {
 		err = r.applyLayerToMount(ctx, m, layer)
 		if err != nil {
@@ -50,10 +51,16 @@ func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Dig
 			return newLayerDesc, diffID, snapshotID, err
 		}
 	}
+	applyLayersElapsed := time.Since(applyLayersStart)
+	r.logger.Infof("apply %d layers took %s", len(layers), applyLayersElapsed)
+	// create diff
+	createDiffStart := time.Now()
 	newLayerDesc, diffID, err = r.createDiff(ctx, key)
 	if err != nil {
 		return newLayerDesc, diffID, snapshotID, fmt.Errorf("failed to export layer: %w", err)
 	}
+	createDiffElapsed := time.Since(createDiffStart)
+	r.logger.Infof("create diff took %s", createDiffElapsed)
 
 	// commit snapshot
 	snapshotID = identity.ChainID(append(parentDiffIDs, diffID)).String()
