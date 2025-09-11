@@ -28,7 +28,7 @@ func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOption) error {
 		return err
 	}
 	// Don't gc me and clean the dirty data after 1 hour! (or the temp snapshot may be gced when we are debugging)
-	ctx, done, err := r.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(60*time.Minute))
+	ctx, done, err := r.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(24*time.Hour))
 	if err != nil {
 		return err
 	}
