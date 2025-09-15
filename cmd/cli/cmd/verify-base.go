@@ -13,7 +13,6 @@ func NewCmdVerifyBase() *cobra.Command {
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  verifyBaseAction,
 	}
-	_ = processVerifyBaseCmdFlags(verifyBaseCmd)
 	return verifyBaseCmd
 }
 
@@ -22,7 +21,10 @@ func verifyBaseAction(cmd *cobra.Command, args []string) error {
 		originalImageRef = args[0]
 		baseImageRef     = args[1]
 	)
-	verifyBaseOptions := processVerifyBaseCmdFlags(cmd)
+	verifyBaseOptions, err := processVerifyBaseCmdFlags(cmd)
+	if err != nil {
+		return err
+	}
 
 	verifyBaseOptions.OriginalImage = originalImageRef
 	verifyBaseOptions.BaseImage = baseImageRef
@@ -39,9 +41,13 @@ func verifyBaseAction(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func processVerifyBaseCmdFlags(cmd *cobra.Command) options.VerifyBaseOptions {
-	root := processRootCmdFlags(cmd)
+func processVerifyBaseCmdFlags(cmd *cobra.Command) (options.VerifyBaseOptions, error) {
+	root, err := processRootCmdFlags(cmd)
+	if err != nil {
+		// handle error
+		return options.VerifyBaseOptions{}, err
+	}
 	return options.VerifyBaseOptions{
 		RootOptions: root,
-	}
+	}, nil
 }

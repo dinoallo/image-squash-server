@@ -18,7 +18,9 @@ func NewCmdRebase() *cobra.Command {
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  rebaseAction,
 	}
-	_ = processRebaseCmdFlags(rebaseCmd)
+	rebaseCmd.Flags().String("base-image", "", "old base image ref, if not specified, will be the same as the original image")
+	rebaseCmd.Flags().String("new-image", "", "new image ref, if not specified, will be the same as the original image")
+	rebaseCmd.Flags().Bool("auto-squash", DefaultAutoSquash, "squash all new application layers into one (disabled by default)")
 
 	return rebaseCmd
 }
@@ -30,7 +32,10 @@ func rebaseAction(cmd *cobra.Command, args []string) error {
 		newBaseImageRef  string
 	)
 
-	rebaseOptions := processRebaseCmdFlags(cmd)
+	rebaseOptions, err := processRebaseCmdFlags(cmd)
+	if err != nil {
+		return err
+	}
 	// Positional arguments: originalImageRef, newBaseImageRef
 	originalImageRef = args[0]
 	newBaseImageRef = args[1]
@@ -58,19 +63,28 @@ func rebaseAction(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func processRebaseCmdFlags(cmd *cobra.Command) options.RebaseOptions {
-	var (
-		baseImageRef string
-		newImageRef  string
-		autoSquash   bool
-	)
-	cmd.Flags().StringVar(&baseImageRef, "base-image", "", "old base image ref, if not specified, will be the same as the original image")
-	cmd.Flags().StringVar(&newImageRef, "new-image", "", "new image ref, if not specified, will be the same as the original image")
-	cmd.Flags().BoolVar(&autoSquash, "auto-squash", DefaultAutoSquash, "squash all new application layers into one (disabled by default)")
-	return options.RebaseOptions{
-		RootOptions: processRootCmdFlags(cmd),
-		BaseImage:   baseImageRef,
-		NewImage:    newImageRef,
-		AutoSquash:  autoSquash,
+func processRebaseCmdFlags(cmd *cobra.Command) (options.RebaseOptions, error) {
+	o := options.RebaseOptions{}
+	var err error
+	o.RootOptions, err = processRootCmdFlags(cmd)
+	if err != nil {
+		// handle error
+		return o, err
 	}
+	o.BaseImage, err = cmd.Flags().GetString("base-image")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	o.NewImage, err = cmd.Flags().GetString("new-image")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	o.AutoSquash, err = cmd.Flags().GetBool("auto-squash")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	return o, nil
 }

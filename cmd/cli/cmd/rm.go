@@ -13,7 +13,7 @@ func NewCmdRemove() *cobra.Command {
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  removeAction,
 	}
-	_ = processRemoveCmdFlags(removeCmd)
+	removeCmd.Flags().String("new-image", "", "new image ref, if not specified, will be the same as the original image")
 	return removeCmd
 }
 
@@ -23,7 +23,10 @@ func removeAction(cmd *cobra.Command, args []string) error {
 		originalImageRef = args[1]
 	)
 
-	opts := processRemoveCmdFlags(cmd)
+	opts, err := processRemoveCmdFlags(cmd)
+	if err != nil {
+		return err
+	}
 	opts.File = file
 	opts.OriginalImage = originalImageRef
 	if opts.NewImage == "" {
@@ -42,9 +45,18 @@ func removeAction(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func processRemoveCmdFlags(cmd *cobra.Command) options.RemoveOptions {
-	var newImageRef string
-	cmd.Flags().StringVar(&newImageRef, "new-image", "", "new image ref, if not specified, will be the same as the original image")
-	root := processRootCmdFlags(cmd)
-	return options.RemoveOptions{RootOptions: root, NewImage: newImageRef}
+func processRemoveCmdFlags(cmd *cobra.Command) (options.RemoveOptions, error) {
+	var err error
+	o := options.RemoveOptions{}
+	o.RootOptions, err = processRootCmdFlags(cmd)
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	o.NewImage, err = cmd.Flags().GetString("new-image")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	return o, nil
 }

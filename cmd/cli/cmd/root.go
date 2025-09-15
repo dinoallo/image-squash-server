@@ -19,7 +19,9 @@ func New() *cobra.Command {
 		Use:   "image-manip",
 		Short: "git like image utils",
 	}
-	_ = processRootCmdFlags(rootCmd)
+	rootCmd.PersistentFlags().String("containerd-address", DefaultContainerdAddress, "containerd address")
+	rootCmd.PersistentFlags().String("namespace", DefaultNamespace, "containerd namespace")
+	rootCmd.PersistentFlags().String("log-level", DefaultLogLevel, "log level")
 
 	rootCmd.AddCommand(NewCmdRebase())
 	rootCmd.AddCommand(NewCmdRemove())
@@ -28,18 +30,23 @@ func New() *cobra.Command {
 	return rootCmd
 }
 
-func processRootCmdFlags(cmd *cobra.Command) options.RootOptions {
-	var (
-		containerdAddress string
-		namespace         string
-		logLevel          string
-	)
-	cmd.PersistentFlags().StringVar(&containerdAddress, "containerd-address", DefaultContainerdAddress, "containerd address")
-	cmd.PersistentFlags().StringVar(&namespace, "namespace", DefaultNamespace, "containerd namespace")
-	cmd.PersistentFlags().StringVar(&logLevel, "log-level", DefaultLogLevel, "log level")
-	return options.RootOptions{
-		ContainerdAddress: containerdAddress,
-		Namespace:         namespace,
-		LogLevel:          logLevel,
+func processRootCmdFlags(cmd *cobra.Command) (options.RootOptions, error) {
+	o := options.RootOptions{}
+	var err error
+	o.ContainerdAddress, err = cmd.Flags().GetString("containerd-address")
+	if err != nil {
+		// handle error
+		return o, err
 	}
+	o.Namespace, err = cmd.Flags().GetString("namespace")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	o.LogLevel, err = cmd.Flags().GetString("log-level")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	return o, nil
 }
