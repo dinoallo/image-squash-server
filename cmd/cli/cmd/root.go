@@ -20,8 +20,8 @@ func New() *cobra.Command {
 		Short: "git like image utils",
 	}
 	rootCmd.PersistentFlags().String("containerd-address", DefaultContainerdAddress, "containerd address")
-	rootCmd.PersistentFlags().String("namespace", DefaultNamespace, "containerd namespace")
-	rootCmd.PersistentFlags().String("log-level", DefaultLogLevel, "log level")
+	rootCmd.PersistentFlags().StringP("namespace", "n", DefaultNamespace, "containerd namespace")
+	rootCmd.PersistentFlags().StringP("log-level", "l", DefaultLogLevel, "log level")
 
 	rootCmd.AddCommand(NewCmdRebase())
 	rootCmd.AddCommand(NewCmdRemove())
