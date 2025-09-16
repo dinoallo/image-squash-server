@@ -74,3 +74,12 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 		cancel:      cancel,
 	}, nil
 }
+
+func (r *Runtime) Close() {
+	r.cancel()
+	r.client.Close()
+}
+
+func (r *Runtime) Context() context.Context {
+	return r.runtimeCtx
+}

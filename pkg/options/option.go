@@ -22,6 +22,12 @@ type VerifyBaseOptions struct {
 	BaseImage     string `json:"base_image"`
 }
 
+type SearchHistoryOptions struct {
+	RootOptions
+	ImageRef string `json:"image_ref"`
+	Keyword  string `json:"keyword"`
+}
+
 type RootOptions struct {
 	ContainerdAddress string `json:"containerd_address"`
 	Namespace         string `json:"namespace"`
