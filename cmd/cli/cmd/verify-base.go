@@ -35,7 +35,7 @@ func verifyBaseAction(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := runtimeObj.Verifybase(verifyBaseOptions); err != nil {
+	if err := runtimeObj.Verifybase(runtimeObj.Context(), verifyBaseOptions); err != nil {
 		return err
 	}
 	return nil

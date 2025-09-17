@@ -39,7 +39,7 @@ func removeAction(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := runtimeObj.Remove(opts); err != nil {
+	if err := runtimeObj.Remove(runtimeObj.Context(), opts); err != nil {
 		return err
 	}
 	return nil

@@ -57,7 +57,7 @@ func rebaseAction(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// do the rebase
-	if err := runtimeObj.Rebase(rebaseOptions); err != nil {
+	if err := runtimeObj.Rebase(runtimeObj.Context(), rebaseOptions); err != nil {
 		return err
 	}
 	return nil

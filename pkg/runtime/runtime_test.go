@@ -25,7 +25,7 @@ func TestRuntime_Rebase(t *testing.T) {
 		BaseImage:     "docker.io/library/debian:bookworm-slim",
 		AutoSquash:    true,
 	}
-	if err := r.Rebase(rebaseOpts); err != nil {
+	if err := r.Rebase(r.Context(), rebaseOpts); err != nil {
 		t.Errorf("Rebase() error = %v", err)
 		return
 	}
