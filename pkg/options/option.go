@@ -26,6 +26,9 @@ type SearchHistoryOptions struct {
 	RootOptions
 	ImageRef string `json:"image_ref"`
 	Keyword  string `json:"keyword"`
+	Format   string `json:"format"`
+	Quiet    bool   `json:"quiet"`
+	NoTrunc  bool   `json:"no_trunc"`
 }
 
 type RootOptions struct {
