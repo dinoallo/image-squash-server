@@ -56,13 +56,6 @@ func (r *Runtime) GetImage(ctx context.Context, imageRef string) (imagesutil.Ima
 	if err != nil {
 		return image, err
 	}
-	//TODO: is this check required?
-	/*
-		targetDesc := containerImage.Target
-			if !images.IsManifestType(targetDesc.MediaType) {
-				return &imagesutil.Image{}, fmt.Errorf("only manifest type is supported :%w", errdefs.ErrInvalidArgument)
-			}*/
-
 	clientImage := containerd.NewImage(r.client, containerImage)
 	manifest, _, err := imgutil.ReadManifest(ctx, clientImage)
 	if err != nil {
@@ -95,44 +88,10 @@ func (r *Runtime) UpdateImage(ctx context.Context, img images.Image) (images.Ima
 	return newImg, nil
 }
 
-func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseLayers []ocispec.Descriptor, newLayers Layers) (ocispec.Descriptor, error) {
-	// generate image config
-	imageConfig, err := r.GenerateMergedImageConfig(ctx, baseConfig, newLayers)
-	if err != nil {
-		r.logger.Errorf("failed to generate new image config: %v", err)
-		return ocispec.Descriptor{}, err
-	}
-	allLayers := NewLayers(
-		baseLayers,
-		baseConfig.RootFS.DiffIDs,
-	)
-	allLayers.AppendLayers(newLayers)
-	// write image metadata
-	writeContentsForImageStart := time.Now()
-	manifestDesc, err := r.WriteImageMetadata(ctx, imageConfig, allLayers.Descriptors)
-	if err != nil {
-		return ocispec.Descriptor{}, err
-	}
-	writeContentsForImageElapsed := time.Since(writeContentsForImageStart)
-	r.logger.Infof("write contents for image took %s", writeContentsForImageElapsed)
-	return manifestDesc, nil
-}
-
-func (r *Runtime) UnpackImage(ctx context.Context, imageName string, manifestDesc ocispec.Descriptor) error {
-	nImg := images.Image{
-		Name:      imageName,
-		Target:    manifestDesc,
-		UpdatedAt: time.Now(),
-	}
-	_, err := r.UpdateImage(ctx, nImg)
-	if err != nil {
-		r.logger.Errorf("failed to update image %q: %v", imageName, err)
-		return err
-	}
-	cimg := containerd.NewImage(r.client, nImg)
+func (r *Runtime) UnpackImage(ctx context.Context, img images.Image, manifestDesc ocispec.Descriptor) error {
+	cimg := containerd.NewImage(r.client, img)
 	// unpack image to the snapshot storage
 	if err := cimg.Unpack(ctx, r.snapshotterName); err != nil {
-		r.logger.Errorf("failed to unpack image %q: %v", imageName, err)
 		return err
 	}
 	return nil

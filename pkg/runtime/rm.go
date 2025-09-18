@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/mount"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/util"
@@ -16,27 +18,48 @@ import (
 
 func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOptions) error {
 	// get the original image
-	r.logger.Infof("start to remove file %q from image %q", opt.File, opt.OriginalImage)
-	origImage, err := r.GetImage(ctx, opt.OriginalImage)
+	r.logger.Infof("start to remove file %q from image %q", opt.File, opt.ImageRef)
+	defer r.Track(time.Now(), "remove")
+	image, err := r.GetImage(ctx, opt.ImageRef)
 	if err != nil {
-		r.logger.Errorf("failed to get original image %q: %v", opt.OriginalImage, err)
+		r.logger.Errorf("failed to get original image %q: %v", opt.ImageRef, err)
 		return err
 	}
-	layer, err := r.createRemovalLayer(ctx, origImage.Config, opt.File)
+	layer, err := r.createRemovalLayer(ctx, image.Config, opt.File)
 	if err != nil {
 		r.logger.Errorf("failed to create removal layer for file %q: %v", opt.File, err)
 		return err
 	}
 	newLayers := NewLayersFromLayer(layer)
-	baseLayers := origImage.Manifest.Layers
-	if manifestDesc, err := r.WriteBack(ctx, origImage.Config, baseLayers, newLayers); err != nil {
-		r.logger.Errorf("failed to write back image %q: %v", opt.OriginalImage, err)
-		return err
-	} else if err := r.UnpackImage(ctx, opt.OriginalImage, manifestDesc); err != nil {
-		r.logger.Errorf("failed to unpack image %q: %v", opt.OriginalImage, err)
+	baseLayers := image.Manifest.Layers
+	manifestDesc, err := r.WriteBack(ctx, image.Config, baseLayers, newLayers)
+	if err != nil {
+		r.logger.Errorf("failed to write back image %q: %v", opt.ImageRef, err)
 		return err
 	}
-	r.logger.Infof("file %q removed from image %q successfully", opt.File, opt.OriginalImage)
+	var newImageName string
+	// determine the new image name
+	// if NewImageName is not specified, use the original image name
+	if opt.NewImageName != "" {
+		newImageName = opt.NewImageName
+	} else {
+		newImageName = image.Image.Name
+	}
+	img := images.Image{
+		Name:      newImageName,
+		Target:    manifestDesc,
+		UpdatedAt: time.Now(),
+	}
+	img, err = r.UpdateImage(ctx, img)
+	if err != nil {
+		r.logger.Errorf("failed to unpack image %q: %v", newImageName, err)
+		return err
+	}
+	if err := r.UnpackImage(ctx, img, manifestDesc); err != nil {
+		r.logger.Errorf("failed to unpack image %q: %v", newImageName, err)
+		return err
+	}
+	r.logger.Infof("file %q removed from image %q successfully", opt.File, opt.ImageRef)
 	return nil
 }
 

@@ -93,14 +93,10 @@ func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layers []
 	applyLayersElapsed := time.Since(applyLayersStart)
 	r.logger.Infof("apply %d layers took %s", len(layers), applyLayersElapsed)
 	// create diff
-	createDiffStart := time.Now()
 	newLayer, err = r.createDiff(ctx, key)
 	if err != nil {
 		return newLayer, snapshotID, fmt.Errorf("failed to export layer: %w", err)
 	}
-	createDiffElapsed := time.Since(createDiffStart)
-	r.logger.Infof("create diff took %s", createDiffElapsed)
-
 	// commit snapshot
 	snapshotID = identity.ChainID(append(parent.DiffStack, newLayer.DiffID)).String()
 
@@ -114,34 +110,18 @@ func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layers []
 }
 
 func (r *Runtime) applyLayerToMount(ctx context.Context, mount []mount.Mount, layer ocispec.Descriptor) error {
+	defer r.Track(time.Now(), "applyLayerToMount")
 	r.logger.Infof("apply layer %s to mount %q", layer.Digest, mount)
-	start := time.Now()
 	if _, err := r.differ.Apply(ctx, layer, mount); err != nil {
 		return err
 	}
-	elapsed := time.Since(start)
-	r.logger.Infof("apply layer %s to mount %q cost %s", layer.Digest, mount, elapsed)
 	return nil
 }
 
 // createDiff creates a diff between a snapshot and its parent
 func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (Layer, error) {
+	defer r.Track(time.Now(), "createDiff")
 	r.logger.Infof("create diff for snapshot %s", snapshotName)
-	start := time.Now()
-
-	// // Create a zstd compressor with high compression level
-	// zstdCompressor := func(dest io.Writer, mediaType string) (io.WriteCloser, error) {
-	// 	// Use zstd with high compression level for better compression ratio
-	// 	// while maintaining good speed
-	// 	encoder, err := zstd.NewWriter(dest, zstd.WithEncoderLevel(zstd.SpeedFastest))
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	return encoder, nil
-	// }
-
-	// Create diff with custom compressor
-	// newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ, diff.WithCompressor(zstdCompressor))
 	var (
 		layer = NewLayer(ocispec.Descriptor{}, digest.Digest(""))
 	)
@@ -167,7 +147,6 @@ func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (Layer, e
 		Size:      info.Size,
 	}
 	layer.DiffID = diffID
-	elapsed := time.Since(start)
-	r.logger.Infof("create diff for snapshot %s cost %s", snapshotName, elapsed)
+	r.logger.Infof("diff for snapshot %s created", snapshotName)
 	return layer, nil
 }

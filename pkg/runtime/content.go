@@ -15,9 +15,9 @@ import (
 )
 
 // WriteImageMetadata writes the image config and manifest to the content store and returns the manifest descriptor.
-func (r *Runtime) WriteImageMetadata(ctx context.Context, newConfig ocispec.Image, layers []ocispec.Descriptor) (ocispec.Descriptor, error) {
+func (r *Runtime) writeImageMetadata(ctx context.Context, config ocispec.Image, layers []ocispec.Descriptor) (ocispec.Descriptor, error) {
 	// write image contents to content store
-	configDesc, err := r.writeImageConfig(ctx, newConfig)
+	configDesc, err := r.writeImageConfig(ctx, config)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
@@ -100,4 +100,24 @@ func (r *Runtime) writeImageConfig(ctx context.Context, config ocispec.Image) (o
 		return ocispec.Descriptor{}, err
 	}
 	return configDesc, nil
+}
+
+func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseLayers []ocispec.Descriptor, newLayers Layers) (ocispec.Descriptor, error) {
+	// generate image config
+	imageConfig, err := r.GenerateMergedImageConfig(ctx, baseConfig, newLayers)
+	if err != nil {
+		r.logger.Errorf("failed to generate new image config: %v", err)
+		return ocispec.Descriptor{}, err
+	}
+	allLayers := NewLayers(
+		baseLayers,
+		baseConfig.RootFS.DiffIDs,
+	)
+	allLayers.AppendLayers(newLayers)
+	// write image metadata
+	manifestDesc, err := r.writeImageMetadata(ctx, imageConfig, allLayers.Descriptors)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
+	return manifestDesc, nil
 }

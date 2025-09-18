@@ -2,18 +2,18 @@ package options
 
 type RebaseOptions struct {
 	RootOptions
-	OriginalImage string `json:"original_image"`
-	NewImage      string `json:"new_image"`
-	AutoSquash    bool   `json:"auto_squash"`
-	BaseLayer     string `json:"base_layer"`
-	NewBaseImage  string `json:"new_base_image"`
+	ImageRef        string `json:"image_ref"`
+	NewImageName    string `json:"new_image_name"`
+	BaseLayerDigest string `json:"base_layer_digest"`
+	NewBaseImageRef string `json:"new_base_image_ref"`
+	AutoSquash      bool   `json:"auto_squash"`
 }
 
 type RemoveOptions struct {
 	RootOptions
-	File          string `json:"file"`
-	OriginalImage string `json:"original_image"`
-	NewImage      string `json:"new_image"`
+	File         string `json:"file"`
+	ImageRef     string `json:"image_ref"`
+	NewImageName string `json:"new_image_name"`
 }
 
 type VerifyBaseOptions struct {

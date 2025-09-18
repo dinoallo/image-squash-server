@@ -6,10 +6,12 @@ import (
 	"time"
 
 	"github.com/lingdie/image-manip-server/pkg/options"
+	"github.com/lingdie/image-manip-server/pkg/timer"
 	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/namespaces"
@@ -20,6 +22,7 @@ import (
 type Runtime struct {
 	client *containerd.Client
 	logger *logrus.Logger
+	timer.Timer
 
 	differ          containerd.DiffService
 	imagestore      images.Store
@@ -39,6 +42,7 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 		options.ContainerdAddress,
 	)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	// set up logger
@@ -68,9 +72,19 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 	// Don't gc me and clean the dirty data after 24 hour! (or the temp snapshot may be gced when we are debugging)
 	runtimeCtx, done, err := criClient.WithLease(runtimeCtx, leases.WithRandomID(), leases.WithExpiration(24*time.Hour))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-
+	t, err := timer.NewTimerImpl(logger)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	snapshotterName, err := resolveSnapshotterName(runtimeCtx, criClient, "")
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	return &Runtime{
 		client:       criClient,
 		differ:       criClient.DiffService(),
@@ -78,10 +92,12 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 		contentstore: criClient.ContentStore(),
 		logger:       logger,
 		// use default snapshotter
-		snapshotter: criClient.SnapshotService(""),
-		runtimeCtx:  runtimeCtx,
-		cancel:      cancel,
-		leaseDone:   done,
+		snapshotter:     criClient.SnapshotService(snapshotterName),
+		snapshotterName: snapshotterName,
+		runtimeCtx:      runtimeCtx,
+		cancel:          cancel,
+		leaseDone:       done,
+		Timer:           t,
 	}, nil
 }
 
@@ -100,4 +116,25 @@ func (r *Runtime) Close() error {
 
 func (r *Runtime) Context() context.Context {
 	return r.runtimeCtx
+}
+
+const (
+	DefaultSnapshotter = "overlayfs"
+)
+
+func resolveSnapshotterName(ctx context.Context, c *containerd.Client, name string) (string, error) {
+	if name == "" {
+		label, err := c.GetLabel(ctx, defaults.DefaultSnapshotterNSLabel)
+		if err != nil {
+			return "", err
+		}
+
+		if label != "" {
+			name = label
+		} else {
+			name = DefaultSnapshotter
+		}
+	}
+
+	return name, nil
 }
