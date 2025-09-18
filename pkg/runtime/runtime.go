@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/sirupsen/logrus"
@@ -10,6 +11,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/nerdctl/pkg/clientutil"
@@ -19,13 +21,15 @@ type Runtime struct {
 	client *containerd.Client
 	logger *logrus.Logger
 
-	differ       containerd.DiffService
-	imagestore   images.Store
-	contentstore content.Store
-	snapshotter  snapshots.Snapshotter
+	differ          containerd.DiffService
+	imagestore      images.Store
+	contentstore    content.Store
+	snapshotter     snapshots.Snapshotter
+	snapshotterName string
 
 	runtimeCtx context.Context
 	cancel     context.CancelFunc
+	leaseDone  func(context.Context) error
 }
 
 func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, error) {
@@ -61,6 +65,11 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 	}
 	// set up namespace
 	runtimeCtx = namespaces.WithNamespace(runtimeCtx, options.Namespace)
+	// Don't gc me and clean the dirty data after 24 hour! (or the temp snapshot may be gced when we are debugging)
+	runtimeCtx, done, err := criClient.WithLease(runtimeCtx, leases.WithRandomID(), leases.WithExpiration(24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Runtime{
 		client:       criClient,
@@ -72,12 +81,21 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 		snapshotter: criClient.SnapshotService(""),
 		runtimeCtx:  runtimeCtx,
 		cancel:      cancel,
+		leaseDone:   done,
 	}, nil
 }
 
-func (r *Runtime) Close() {
+func (r *Runtime) Close() error {
+	// release the lease
+	if err := r.leaseDone(r.runtimeCtx); err != nil {
+		return err
+	}
 	r.cancel()
-	r.client.Close()
+	// close the client
+	if err := r.client.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Runtime) Context() context.Context {

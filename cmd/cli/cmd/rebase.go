@@ -13,14 +13,14 @@ const (
 func NewCmdRebase() *cobra.Command {
 
 	var rebaseCmd = &cobra.Command{
-		Use:   "rebase ORIGINAL_IMAGE NEW_BASE_IMAGE",
+		Use:   "rebase ORIGINAL_IMAGE BASE_LAYER",
 		Short: "Rebase a container image",
 		Args:  cobra.MinimumNArgs(2),
 		RunE:  rebaseAction,
 	}
-	rebaseCmd.Flags().String("base-image", "", "old base image ref, if not specified, will be the same as the original image")
 	rebaseCmd.Flags().String("new-image", "", "new image ref, if not specified, will be the same as the original image")
 	rebaseCmd.Flags().Bool("auto-squash", DefaultAutoSquash, "squash all new application layers into one (disabled by default)")
+	rebaseCmd.Flags().String("new-base-image", "", "new base image ref, if not specified, will be the same as the base layer")
 
 	return rebaseCmd
 }
@@ -29,22 +29,18 @@ func rebaseAction(cmd *cobra.Command, args []string) error {
 
 	var (
 		originalImageRef string
-		newBaseImageRef  string
+		baseLayerRef     string
 	)
 
 	rebaseOptions, err := processRebaseCmdFlags(cmd)
 	if err != nil {
 		return err
 	}
-	// Positional arguments: originalImageRef, newBaseImageRef
+	// Positional arguments: originalImageRef, baseLayerRef
 	originalImageRef = args[0]
-	newBaseImageRef = args[1]
+	baseLayerRef = args[1]
 	rebaseOptions.OriginalImage = originalImageRef
-	rebaseOptions.NewBaseImage = newBaseImageRef
-	// base image and new image default to original image if not specified
-	if rebaseOptions.BaseImage == "" {
-		rebaseOptions.BaseImage = originalImageRef
-	}
+	rebaseOptions.BaseLayer = baseLayerRef
 	if rebaseOptions.NewImage == "" {
 		rebaseOptions.NewImage = originalImageRef
 	}
@@ -71,17 +67,17 @@ func processRebaseCmdFlags(cmd *cobra.Command) (options.RebaseOptions, error) {
 		// handle error
 		return o, err
 	}
-	o.BaseImage, err = cmd.Flags().GetString("base-image")
-	if err != nil {
-		// handle error
-		return o, err
-	}
 	o.NewImage, err = cmd.Flags().GetString("new-image")
 	if err != nil {
 		// handle error
 		return o, err
 	}
 	o.AutoSquash, err = cmd.Flags().GetBool("auto-squash")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	o.NewBaseImage, err = cmd.Flags().GetString("new-base-image")
 	if err != nil {
 		// handle error
 		return o, err

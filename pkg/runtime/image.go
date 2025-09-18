@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultAuthor  = "image-manip"
-	defaultMessage = "image rebased"
+	defaultMessage = "layer merged by image-manip"
 )
 
 func (r *Runtime) FindImage(ctx context.Context, imageRef string) (string, error) {
@@ -46,14 +46,15 @@ func (r *Runtime) FindImage(ctx context.Context, imageRef string) (string, error
 	return srcName, nil
 }
 
-func (r *Runtime) GetImage(ctx context.Context, imageRef string) (*imagesutil.Image, error) {
-	image, err := r.FindImage(ctx, imageRef)
+func (r *Runtime) GetImage(ctx context.Context, imageRef string) (imagesutil.Image, error) {
+	imageName, err := r.FindImage(ctx, imageRef)
+	image := imagesutil.Image{}
 	if err != nil {
-		return &imagesutil.Image{}, err
+		return image, err
 	}
-	containerImage, err := r.imagestore.Get(ctx, image)
+	containerImage, err := r.imagestore.Get(ctx, imageName)
 	if err != nil {
-		return &imagesutil.Image{}, err
+		return image, err
 	}
 	//TODO: is this check required?
 	/*
@@ -65,19 +66,19 @@ func (r *Runtime) GetImage(ctx context.Context, imageRef string) (*imagesutil.Im
 	clientImage := containerd.NewImage(r.client, containerImage)
 	manifest, _, err := imgutil.ReadManifest(ctx, clientImage)
 	if err != nil {
-		return &imagesutil.Image{}, err
+		return imagesutil.Image{}, err
 	}
 	config, _, err := imgutil.ReadImageConfig(ctx, clientImage)
 	if err != nil {
-		return &imagesutil.Image{}, err
+		return imagesutil.Image{}, err
 	}
-	resImage := &imagesutil.Image{
+	image = imagesutil.Image{
 		ClientImage: clientImage,
 		Config:      config,
 		Image:       containerImage,
 		Manifest:    manifest,
 	}
-	return resImage, err
+	return image, err
 }
 
 func (r *Runtime) UpdateImage(ctx context.Context, img images.Image) (images.Image, error) {
@@ -94,8 +95,51 @@ func (r *Runtime) UpdateImage(ctx context.Context, img images.Image) (images.Ima
 	return newImg, nil
 }
 
-// GenerateImageConfig returns oci image config based on the base image and the rebased layers
-func (r *Runtime) GenerateImageConfig(ctx context.Context, baseImg images.Image, baseConfig ocispec.Image, newDiffIDs []digest.Digest) (ocispec.Image, error) {
+func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseLayers []ocispec.Descriptor, newLayers Layers) (ocispec.Descriptor, error) {
+	// generate image config
+	imageConfig, err := r.GenerateMergedImageConfig(ctx, baseConfig, newLayers)
+	if err != nil {
+		r.logger.Errorf("failed to generate new image config: %v", err)
+		return ocispec.Descriptor{}, err
+	}
+	allLayers := NewLayers(
+		baseLayers,
+		baseConfig.RootFS.DiffIDs,
+	)
+	allLayers.AppendLayers(newLayers)
+	// write image metadata
+	writeContentsForImageStart := time.Now()
+	manifestDesc, err := r.WriteImageMetadata(ctx, imageConfig, allLayers.Descriptors)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
+	writeContentsForImageElapsed := time.Since(writeContentsForImageStart)
+	r.logger.Infof("write contents for image took %s", writeContentsForImageElapsed)
+	return manifestDesc, nil
+}
+
+func (r *Runtime) UnpackImage(ctx context.Context, imageName string, manifestDesc ocispec.Descriptor) error {
+	nImg := images.Image{
+		Name:      imageName,
+		Target:    manifestDesc,
+		UpdatedAt: time.Now(),
+	}
+	_, err := r.UpdateImage(ctx, nImg)
+	if err != nil {
+		r.logger.Errorf("failed to update image %q: %v", imageName, err)
+		return err
+	}
+	cimg := containerd.NewImage(r.client, nImg)
+	// unpack image to the snapshot storage
+	if err := cimg.Unpack(ctx, r.snapshotterName); err != nil {
+		r.logger.Errorf("failed to unpack image %q: %v", imageName, err)
+		return err
+	}
+	return nil
+}
+
+// GenerateMergedImageConfig generates a new image config by merging the base image config and the new layers.
+func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocispec.Image, newLayers Layers) (ocispec.Image, error) {
 	createdTime := time.Now()
 	arch := baseConfig.Architecture
 	if arch == "" {
@@ -111,28 +155,41 @@ func (r *Runtime) GenerateImageConfig(ctx context.Context, baseImg images.Image,
 	if author == "" {
 		author = baseConfig.Author
 	}
-	comment := strings.TrimSpace(defaultMessage) //TODO: make this configurable
-
-	baseImageDigest := strings.Split(baseImg.Target.Digest.String(), ":")[1][:12]
 	return ocispec.Image{
 		Platform: ocispec.Platform{
 			Architecture: arch,
 			OS:           os,
 		},
-
 		Created: &createdTime,
 		Author:  author,
 		Config:  baseConfig.Config,
-		RootFS: ocispec.RootFS{
-			Type:    "layers",
-			DiffIDs: append(baseConfig.RootFS.DiffIDs, newDiffIDs...),
-		},
-		History: append(baseConfig.History, ocispec.History{
-			Created:    &createdTime,
-			CreatedBy:  defaultAuthor + " (rebased onto " + baseImageDigest + ")",
+		RootFS:  generateRootFS(baseConfig.RootFS, newLayers),
+		History: generateHistory(baseConfig.History, newLayers),
+	}, nil
+}
+
+func generateRootFS(baseRootfs ocispec.RootFS, layers Layers) ocispec.RootFS {
+	diffIDs := make([]digest.Digest, 0, len(baseRootfs.DiffIDs)+len(layers.DiffIDs))
+	copy(diffIDs, baseRootfs.DiffIDs)
+	return ocispec.RootFS{
+		Type:    "layers",
+		DiffIDs: append(diffIDs, layers.DiffIDs...),
+	}
+}
+
+func generateHistory(_history []ocispec.History, layers Layers) []ocispec.History {
+	history := make([]ocispec.History, 0, len(_history)+len(layers.Descriptors))
+	copy(history, _history)
+	author := strings.TrimSpace(defaultAuthor)   //TODO: make this configurable
+	comment := strings.TrimSpace(defaultMessage) //TODO: make this configurable
+	for _, layer := range layers.Descriptors {
+		history = append(history, ocispec.History{
+			Created:    nil,
+			CreatedBy:  "ADD " + layer.Digest.String() + " in " + layer.MediaType,
 			Author:     author,
 			Comment:    comment,
 			EmptyLayer: false,
-		}),
-	}, nil
+		})
+	}
+	return history
 }

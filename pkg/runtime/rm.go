@@ -5,11 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/mount"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/util"
@@ -26,94 +22,67 @@ func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOptions) error {
 		r.logger.Errorf("failed to get original image %q: %v", opt.OriginalImage, err)
 		return err
 	}
-	// Don't gc me and clean the dirty data after 1 hour! (or the temp snapshot may be gced when we are debugging)
-	ctx, done, err := r.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(24*time.Hour))
-	if err != nil {
-		return err
-	}
-	defer done(ctx)
-	var (
-		newLayers  []ocispec.Descriptor
-		newDiffIDs []digest.Digest
-	)
-	newLayer, newDiffID, err := r.createRemovalLayer(ctx, origImage.Config, opt.File)
+	layer, err := r.createRemovalLayer(ctx, origImage.Config, opt.File)
 	if err != nil {
 		r.logger.Errorf("failed to create removal layer for file %q: %v", opt.File, err)
 		return err
 	}
-	newLayers = append(newLayers, newLayer)
-	newDiffIDs = append(newDiffIDs, newDiffID)
-	newImageConfig, err := r.GenerateImageConfig(ctx, origImage.Image, origImage.Config, newDiffIDs)
-	if err != nil {
-		r.logger.Errorf("failed to generate new image config for %q: %v", opt.NewImage, err)
+	newLayers := NewLayersFromLayer(layer)
+	baseLayers := origImage.Manifest.Layers
+	if manifestDesc, err := r.WriteBack(ctx, origImage.Config, baseLayers, newLayers); err != nil {
+		r.logger.Errorf("failed to write back image %q: %v", opt.OriginalImage, err)
+		return err
+	} else if err := r.UnpackImage(ctx, opt.OriginalImage, manifestDesc); err != nil {
+		r.logger.Errorf("failed to unpack image %q: %v", opt.OriginalImage, err)
 		return err
 	}
-	commitManifestDesc, _, err := r.WriteContentsForImage(ctx, "overlayfs", newImageConfig, origImage.Manifest.Layers, newLayers)
-	if err != nil {
-		r.logger.Errorf("failed to write contents for image %q: %v", opt.NewImage, err)
-		return err
-	}
-	nImg := images.Image{
-		Name:      opt.NewImage,
-		Target:    commitManifestDesc,
-		UpdatedAt: time.Now(),
-	}
-	_, err = r.UpdateImage(ctx, nImg)
-	if err != nil {
-		r.logger.Errorf("failed to update image %q: %v", opt.NewImage, err)
-		return err
-	}
-	cimg := containerd.NewImage(r.client, nImg)
-	// unpack image to the snapshot storage
-	if err := cimg.Unpack(ctx, "overlayfs"); err != nil {
-		r.logger.Errorf("failed to unpack image %q: %v", opt.NewImage, err)
-		return err
-	}
+	r.logger.Infof("file %q removed from image %q successfully", opt.File, opt.OriginalImage)
 	return nil
 }
 
-func (r *Runtime) createRemovalLayer(ctx context.Context, origImage ocispec.Image, file string) (ocispec.Descriptor, digest.Digest, error) {
+func (r *Runtime) createRemovalLayer(ctx context.Context, origImage ocispec.Image, file string) (Layer, error) {
 	var (
 		key           = fmt.Sprintf("file-removal-%s", util.UniquePart())
 		parentDiffIDs = origImage.RootFS.DiffIDs
 		parent        = identity.ChainID(origImage.RootFS.DiffIDs)
+		layer         = NewLayer(ocispec.Descriptor{}, digest.Digest(""))
 	)
 	// create mount target to mount the rootfs
 	mountTarget, err := os.MkdirTemp(os.Getenv("XDG_RUNTIME_DIR"), "remove-file-")
 	if err != nil {
 		r.logger.Errorf("failed to create mount target %q: %v", mountTarget, err)
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
 	defer os.RemoveAll(mountTarget)
 	// prepare a temporary rootfs
 	mounts, err := r.snapshotter.Prepare(ctx, key, parent.String())
 	if err != nil {
 		r.logger.Errorf("failed to prepare snapshot %q: %v", key, err)
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
 	mounter := NewMounterImpl()
 	if err := mounter.Mount(mountTarget, mounts...); err != nil {
 		r.logger.Errorf("failed to mount rootfs %q: %v", mountTarget, err)
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
 	defer mounter.Unmount(mountTarget)
 	// remove the file
 	if err := os.RemoveAll(filepath.Join(mountTarget, file)); err != nil {
 		r.logger.Errorf("failed to remove file %q: %v", file, err)
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
 	// create a diff from the modified rootfs
-	newLayer, diffID, err := r.createDiff(ctx, key)
+	layer, err = r.createDiff(ctx, key)
 	if err != nil {
 		r.logger.Errorf("failed to create diff for snapshot %q: %v", key, err)
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
-	child := identity.ChainID(append(parentDiffIDs, diffID)).String()
+	child := identity.ChainID(append(parentDiffIDs, layer.DiffID)).String()
 	if err := r.snapshotter.Commit(ctx, child, key); err != nil {
 		r.logger.Errorf("failed to commit snapshot %q: %v", child, err)
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
-	return newLayer, diffID, nil
+	return layer, nil
 }
 
 func NewMounterImpl() *MounterImpl {

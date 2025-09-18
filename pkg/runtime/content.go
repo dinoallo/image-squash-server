@@ -14,26 +14,31 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-var (
-	emptyDigest = digest.Digest("")
-)
-
-func (r *Runtime) WriteContentsForImage(ctx context.Context, snName string, newConfig ocispec.Image, baseImageLayers []ocispec.Descriptor, newLayers []ocispec.Descriptor) (ocispec.Descriptor, digest.Digest, error) {
+// WriteImageMetadata writes the image config and manifest to the content store and returns the manifest descriptor.
+func (r *Runtime) WriteImageMetadata(ctx context.Context, newConfig ocispec.Image, layers []ocispec.Descriptor) (ocispec.Descriptor, error) {
 	// write image contents to content store
-	newConfigJSON, err := json.Marshal(newConfig)
+	configDesc, err := r.writeImageConfig(ctx, newConfig)
 	if err != nil {
-		return ocispec.Descriptor{}, emptyDigest, err
+		return ocispec.Descriptor{}, err
 	}
-
-	configDesc := ocispec.Descriptor{
-		MediaType: images.MediaTypeDockerSchema2Config,
-		Digest:    digest.FromBytes(newConfigJSON),
-		Size:      int64(len(newConfigJSON)),
+	manifestDesc, err := r.writeImageManifest(ctx, configDesc, layers)
+	if err != nil {
+		return ocispec.Descriptor{}, err
 	}
+	return manifestDesc, nil
+}
 
-	layers := append(baseImageLayers, newLayers...)
+func createImageManifest(manifestJSON []byte) ocispec.Descriptor {
+	manifestDesc := ocispec.Descriptor{
+		MediaType: images.MediaTypeDockerSchema2Manifest,
+		Digest:    digest.FromBytes(manifestJSON),
+		Size:      int64(len(manifestJSON)),
+	}
+	return manifestDesc
+}
 
-	newMfst := struct {
+func (r *Runtime) writeImageManifest(ctx context.Context, configDesc ocispec.Descriptor, layers []ocispec.Descriptor) (ocispec.Descriptor, error) {
+	manifest := struct {
 		MediaType string `json:"mediaType,omitempty"`
 		ocispec.Manifest
 	}{
@@ -47,16 +52,12 @@ func (r *Runtime) WriteContentsForImage(ctx context.Context, snName string, newC
 		},
 	}
 
-	newMfstJSON, err := json.MarshalIndent(newMfst, "", "    ")
+	manifestJSON, err := json.MarshalIndent(manifest, "", "    ")
 	if err != nil {
-		return ocispec.Descriptor{}, emptyDigest, err
+		return ocispec.Descriptor{}, err
 	}
 
-	newMfstDesc := ocispec.Descriptor{
-		MediaType: images.MediaTypeDockerSchema2Manifest,
-		Digest:    digest.FromBytes(newMfstJSON),
-		Size:      int64(len(newMfstJSON)),
-	}
+	manifestDesc := createImageManifest(manifestJSON)
 
 	// new manifest should reference the layers and config content
 	labels := map[string]string{
@@ -66,18 +67,37 @@ func (r *Runtime) WriteContentsForImage(ctx context.Context, snName string, newC
 		labels[fmt.Sprintf("containerd.io/gc.ref.content.%d", i+1)] = l.Digest.String()
 	}
 
-	err = content.WriteBlob(ctx, r.contentstore, newMfstDesc.Digest.String(), bytes.NewReader(newMfstJSON), newMfstDesc, content.WithLabels(labels))
+	err = content.WriteBlob(ctx, r.contentstore, manifestDesc.Digest.String(), bytes.NewReader(manifestJSON), manifestDesc, content.WithLabels(labels))
 	if err != nil {
-		return ocispec.Descriptor{}, emptyDigest, err
+		return ocispec.Descriptor{}, err
 	}
+	return manifestDesc, nil
+}
 
-	// config should reference to snapshotter
-	labelOpt := content.WithLabels(map[string]string{
-		fmt.Sprintf("containerd.io/gc.ref.snapshot.%s", snName): identity.ChainID(newConfig.RootFS.DiffIDs).String(),
-	})
-	err = content.WriteBlob(ctx, r.contentstore, configDesc.Digest.String(), bytes.NewReader(newConfigJSON), configDesc, labelOpt)
-	if err != nil {
-		return ocispec.Descriptor{}, emptyDigest, err
+func createImageConfig(configJSON []byte) ocispec.Descriptor {
+	configDesc := ocispec.Descriptor{
+		MediaType: images.MediaTypeDockerSchema2Config,
+		Digest:    digest.FromBytes(configJSON),
+		Size:      int64(len(configJSON)),
 	}
-	return newMfstDesc, configDesc.Digest, nil
+	return configDesc
+}
+
+func (r *Runtime) writeImageConfig(ctx context.Context, config ocispec.Image) (ocispec.Descriptor, error) {
+	// marshal config to JSON
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
+	// create config descriptor
+	configDesc := createImageConfig(configJSON)
+	snapshot := identity.ChainID(config.RootFS.DiffIDs).String()
+	// there should be a reference from image to snapshot in the config
+	labelOpt := content.WithLabels(map[string]string{
+		fmt.Sprintf("containerd.io/gc.ref.snapshot.%s", r.snapshotterName): snapshot,
+	})
+	if err := content.WriteBlob(ctx, r.contentstore, configDesc.Digest.String(), bytes.NewReader(configJSON), configDesc, labelOpt); err != nil {
+		return ocispec.Descriptor{}, err
+	}
+	return configDesc, nil
 }

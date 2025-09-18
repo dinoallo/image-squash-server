@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/log"
 	"github.com/containerd/nerdctl/pkg/formatter"
 	"github.com/lingdie/image-manip-server/pkg/options"
-	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -23,7 +22,7 @@ import (
 type historyPrintable struct {
 	// LastSnapshot is the last snapshot name
 	LastSnapshot string
-	// LastLayer is the last non-empty layer's diffID
+	// LastLayer is the last non-empty layer's descriptor digest
 	LastLayer    string
 	CreatedSince string
 	CreatedBy    string
@@ -33,19 +32,24 @@ type historyPrintable struct {
 }
 
 // ImageHistory returns the history entries for the given image reference.
-func (r *Runtime) ImageHistory(ctx context.Context, imageRef string) ([]digest.Digest, []ocispec.History, error) {
+func (r *Runtime) ImageHistory(ctx context.Context, imageRef string) (Layers, []ocispec.History, error) {
 	img, err := r.GetImage(ctx, imageRef)
 	if err != nil {
-		return nil, nil, err
+		return NewEmptyLayers(), nil, err
 	}
-	return img.Config.RootFS.DiffIDs, img.Config.History, nil
+	layers := NewLayers(img.Manifest.Layers, img.Config.RootFS.DiffIDs)
+	return layers, img.Config.History, nil
 }
 
 func (r *Runtime) SearchImageHistory(ctx context.Context, opts options.SearchHistoryOptions) error {
-	diffIDs, histories, err := r.ImageHistory(ctx, opts.ImageRef)
+	layers, histories, err := r.ImageHistory(ctx, opts.ImageRef)
 	if err != nil {
 		return err
 	}
+	if len(layers.Descriptors) != len(layers.DiffIDs) {
+		return fmt.Errorf("invalid image: number of layers descriptors and diff IDs do not match")
+	}
+	layerLen := len(layers.DiffIDs)
 	layerIndex := 0
 	lastSnapshotName := ""
 	lastLayerName := ""
@@ -55,11 +59,11 @@ func (r *Runtime) SearchImageHistory(ctx context.Context, opts options.SearchHis
 			size  string
 			empty bool
 		)
-		if len(diffIDs) <= layerIndex {
+		if layerLen <= layerIndex {
 			break
 		}
 		if !h.EmptyLayer {
-			chainID := identity.ChainID(diffIDs[0 : layerIndex+1]).String()
+			chainID := identity.ChainID(layers.DiffIDs[0 : layerIndex+1]).String()
 			stat, err := r.snapshotter.Stat(ctx, chainID)
 			if err != nil {
 				return fmt.Errorf("failed to get stat: %w", err)
@@ -70,7 +74,7 @@ func (r *Runtime) SearchImageHistory(ctx context.Context, opts options.SearchHis
 			}
 			size = progress.Bytes(use.Size).String()
 			lastSnapshotName = stat.Name
-			lastLayerName = diffIDs[layerIndex].String()
+			lastLayerName = layers.Descriptors[layerIndex].Digest.String()
 			layerIndex++
 		} else {
 			size = progress.Bytes(0).String()

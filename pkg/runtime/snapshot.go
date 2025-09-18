@@ -3,35 +3,74 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/rootfs"
-	"github.com/containerd/containerd/snapshots"
 	"github.com/lingdie/image-manip-server/pkg/util"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+type Snapshot struct {
+	Name      string
+	DiffStack []digest.Digest
+}
+
+func NewSnapshot(diffStack []digest.Digest) Snapshot {
+	// make a copy of diffStack to avoid modification
+	// of the original slice
+	diffstack := make([]digest.Digest, len(diffStack))
+	copy(diffstack, diffStack)
+	return Snapshot{
+		Name:      identity.ChainID(diffstack).String(),
+		DiffStack: diffstack,
+	}
+}
+
+func (s *Snapshot) NewChild(diffID digest.Digest) Snapshot {
+	// make a copy of DiffStack to avoid modification
+	// of the original slice
+	diffstack := make([]digest.Digest, len(s.DiffStack), len(s.DiffStack)+1)
+	copy(diffstack, s.DiffStack)
+	diffstack[len(s.DiffStack)] = diffID
+	return Snapshot{
+		Name:      identity.ChainID(diffstack).String(),
+		DiffStack: diffstack,
+	}
+}
+
+func (s *Snapshot) Clone() Snapshot {
+	// make a copy of DiffStack to avoid modification
+	// of the original slice
+	diffstack := make([]digest.Digest, len(s.DiffStack))
+	copy(diffstack, s.DiffStack)
+	return Snapshot{
+		Name:      strings.Clone(s.Name),
+		DiffStack: diffstack,
+	}
+}
+
 // TODO: should we just use rootfs.ApplyLayers?
 // createSnapshot creates a new snapshot from the parent specified by parentDiffIDs, and apply the given layers to it.
-func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Digest, sn snapshots.Snapshotter, layers []ocispec.Descriptor) (
-	ocispec.Descriptor, digest.Digest, string, error) {
+func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layers []Layer) (
+	Layer, string, error) {
 	var (
-		key          = util.UniquePart()
-		parent       = identity.ChainID(parentDiffIDs).String()
-		newLayerDesc ocispec.Descriptor
-		diffID       digest.Digest
-		snapshotID   string
-		retErr       error
+		key        = util.UniquePart()
+		parentName = parent.Name
+		newLayer   Layer
+		snapshotID string
+		retErr     error
+		sn         = r.snapshotter
 	)
 
-	m, err := sn.Prepare(ctx, key, parent)
+	m, err := sn.Prepare(ctx, key, parentName)
 	if err != nil {
-		return newLayerDesc, diffID, snapshotID, err
+		return newLayer, snapshotID, err
 	}
 
 	defer func() {
@@ -45,33 +84,33 @@ func (r *Runtime) createSnapshot(ctx context.Context, parentDiffIDs []digest.Dig
 	}()
 	applyLayersStart := time.Now()
 	for _, layer := range layers {
-		err = r.applyLayerToMount(ctx, m, layer)
+		err = r.applyLayerToMount(ctx, m, layer.Desc)
 		if err != nil {
 			r.logger.Warnf("failed to apply layer to mount %q: %v", m, err)
-			return newLayerDesc, diffID, snapshotID, err
+			return newLayer, snapshotID, err
 		}
 	}
 	applyLayersElapsed := time.Since(applyLayersStart)
 	r.logger.Infof("apply %d layers took %s", len(layers), applyLayersElapsed)
 	// create diff
 	createDiffStart := time.Now()
-	newLayerDesc, diffID, err = r.createDiff(ctx, key)
+	newLayer, err = r.createDiff(ctx, key)
 	if err != nil {
-		return newLayerDesc, diffID, snapshotID, fmt.Errorf("failed to export layer: %w", err)
+		return newLayer, snapshotID, fmt.Errorf("failed to export layer: %w", err)
 	}
 	createDiffElapsed := time.Since(createDiffStart)
 	r.logger.Infof("create diff took %s", createDiffElapsed)
 
 	// commit snapshot
-	snapshotID = identity.ChainID(append(parentDiffIDs, diffID)).String()
+	snapshotID = identity.ChainID(append(parent.DiffStack, newLayer.DiffID)).String()
 
 	if err = sn.Commit(ctx, snapshotID, key); err != nil {
 		if errdefs.IsAlreadyExists(err) {
-			return newLayerDesc, diffID, snapshotID, nil
+			return newLayer, snapshotID, nil
 		}
-		return newLayerDesc, diffID, snapshotID, err
+		return newLayer, snapshotID, err
 	}
-	return newLayerDesc, diffID, snapshotID, nil
+	return newLayer, snapshotID, nil
 }
 
 func (r *Runtime) applyLayerToMount(ctx context.Context, mount []mount.Mount, layer ocispec.Descriptor) error {
@@ -86,7 +125,7 @@ func (r *Runtime) applyLayerToMount(ctx context.Context, mount []mount.Mount, la
 }
 
 // createDiff creates a diff between a snapshot and its parent
-func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.Descriptor, digest.Digest, error) {
+func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (Layer, error) {
 	r.logger.Infof("create diff for snapshot %s", snapshotName)
 	start := time.Now()
 
@@ -103,27 +142,32 @@ func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (ocispec.
 
 	// Create diff with custom compressor
 	// newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ, diff.WithCompressor(zstdCompressor))
+	var (
+		layer = NewLayer(ocispec.Descriptor{}, digest.Digest(""))
+	)
 	newDesc, err := rootfs.CreateDiff(ctx, snapshotName, r.snapshotter, r.differ)
 	if err != nil {
-		return ocispec.Descriptor{}, "", err
+		return layer, err
 	}
 	info, err := r.contentstore.Info(ctx, newDesc.Digest)
 	if err != nil {
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
 	diffIDStr, ok := info.Labels["containerd.io/uncompressed"]
 	if !ok {
-		return ocispec.Descriptor{}, digest.Digest(""), fmt.Errorf("invalid differ response with no diffID")
+		return layer, fmt.Errorf("invalid differ response with no diffID")
 	}
 	diffID, err := digest.Parse(diffIDStr)
 	if err != nil {
-		return ocispec.Descriptor{}, digest.Digest(""), err
+		return layer, err
 	}
-	elapsed := time.Since(start)
-	r.logger.Infof("create diff for snapshot %s cost %s", snapshotName, elapsed)
-	return ocispec.Descriptor{
+	layer.Desc = ocispec.Descriptor{
 		MediaType: images.MediaTypeDockerSchema2LayerGzip,
 		Digest:    newDesc.Digest,
 		Size:      info.Size,
-	}, diffID, nil
+	}
+	layer.DiffID = diffID
+	elapsed := time.Since(start)
+	r.logger.Infof("create diff for snapshot %s cost %s", snapshotName, elapsed)
+	return layer, nil
 }

@@ -2,11 +2,11 @@ package options
 
 type RebaseOptions struct {
 	RootOptions
-	BaseImage     string `json:"base_image"`
-	NewBaseImage  string `json:"new_base_image"`
 	OriginalImage string `json:"original_image"`
 	NewImage      string `json:"new_image"`
 	AutoSquash    bool   `json:"auto_squash"`
+	BaseLayer     string `json:"base_layer"`
+	NewBaseImage  string `json:"new_base_image"`
 }
 
 type RemoveOptions struct {
