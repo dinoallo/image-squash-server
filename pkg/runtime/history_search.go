@@ -15,6 +15,7 @@ import (
 	"github.com/containerd/log"
 	"github.com/containerd/nerdctl/pkg/formatter"
 	"github.com/lingdie/image-manip-server/pkg/options"
+	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -40,6 +41,47 @@ func (r *Runtime) ImageHistory(ctx context.Context, imageRef string) (Layers, []
 	layers := NewLayers(img.Manifest.Layers, img.Config.RootFS.DiffIDs)
 	return layers, img.Config.History, nil
 }
+
+func (r *Runtime) CommentContains(ctx context.Context, imageRef string, pattern string) (digest.Digest, error) {
+	layers, histories, err := r.ImageHistory(ctx, imageRef)
+	if err != nil {
+		return "", err
+	}
+	layerIndex := 0
+	for _, h := range histories {
+		if h.EmptyLayer {
+			continue
+		}
+		if strings.Contains(h.Comment, pattern) {
+			// Found a matching comment
+			return layers.Descriptors[layerIndex].Digest, nil
+		}
+		layerIndex++
+	}
+	return "", fmt.Errorf("no matching comment found")
+}
+
+func (r *Runtime) LastestCommentContains(ctx context.Context, imageRef string, pattern string) (digest.Digest, error) {
+	layers, histories, err := r.ImageHistory(ctx, imageRef)
+	if err != nil {
+		return "", err
+	}
+	layerIndex := len(layers.Descriptors) - 1
+	for i := len(histories) - 1; i >= 0; i-- {
+		h := histories[i]
+		if h.EmptyLayer {
+			continue
+		}
+		if strings.Contains(h.Comment, pattern) {
+			// Found a matching comment
+			return layers.Descriptors[layerIndex].Digest, nil
+		}
+		layerIndex--
+	}
+	return "", fmt.Errorf("no matching comment found")
+}
+
+// SearchImageHistory searches the image history for entries matching the given keyword.
 
 func (r *Runtime) SearchImageHistory(ctx context.Context, opts options.SearchHistoryOptions) error {
 	layers, histories, err := r.ImageHistory(ctx, opts.ImageRef)
