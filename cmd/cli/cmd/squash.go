@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
 	"github.com/spf13/cobra"
@@ -46,7 +44,7 @@ func squashAction(cmd *cobra.Command, args []string) error {
 	defer func() {
 		err := runtimeObj.Close()
 		if err != nil {
-			fmt.Printf("failed to close runtime: %v\n", err)
+			runtimeObj.Infof("failed to close runtime: %v\n", err)
 		}
 	}()
 	if err != nil {
@@ -55,7 +53,7 @@ func squashAction(cmd *cobra.Command, args []string) error {
 	// if base layer digest is not provided, we will try to detect it intelligently
 	// by looking for the last layer with the default dockerfile comment
 	if rebaseOptions.BaseLayerDigest == "" {
-		fmt.Println("No base layer digest provided, attempting to detect intelligently...")
+		runtimeObj.Infof("No base layer digest provided, attempting to detect intelligently...")
 		// detect the base layer if not provided
 
 		baseLayerDigest, err := runtimeObj.LastestCommentContains(runtimeObj.Context(), imageRef, defaultDockerfileComment)
@@ -63,7 +61,7 @@ func squashAction(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		rebaseOptions.BaseLayerDigest = baseLayerDigest.String()
-		fmt.Printf("Detected base layer digest: %s\n", rebaseOptions.BaseLayerDigest)
+		runtimeObj.Infof("Detected base layer digest: %s\n", rebaseOptions.BaseLayerDigest)
 	}
 
 	// do the rebase
