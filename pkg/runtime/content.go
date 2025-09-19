@@ -106,7 +106,7 @@ func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseL
 	// generate image config
 	imageConfig, err := r.GenerateMergedImageConfig(ctx, baseConfig, newLayers)
 	if err != nil {
-		r.logger.Errorf("failed to generate new image config: %v", err)
+		r.Errorf("failed to generate new image config: %v", err)
 		return ocispec.Descriptor{}, err
 	}
 	allLayers, err := NewLayerChain(

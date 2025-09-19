@@ -21,7 +21,7 @@ import (
 
 type Runtime struct {
 	client *containerd.Client
-	logger *logrus.Logger
+	*logrus.Logger
 	timer.Timer
 
 	differ          containerd.DiffService
@@ -90,7 +90,7 @@ func NewRuntime(ctx context.Context, options options.RootOptions) (*Runtime, err
 		differ:       criClient.DiffService(),
 		imagestore:   criClient.ImageService(),
 		contentstore: criClient.ContentStore(),
-		logger:       logger,
+		Logger:       logger,
 		// use default snapshotter
 		snapshotter:     criClient.SnapshotService(snapshotterName),
 		snapshotterName: snapshotterName,

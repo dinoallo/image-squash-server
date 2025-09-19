@@ -80,7 +80,7 @@ func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layerChai
 			// NOTE: the snapshotter should be hold by lease. Even
 			// if the cleanup fails, the containerd gc can delete it.
 			if err := sn.Remove(ctx, key); err != nil {
-				r.logger.Warnf("failed to cleanup aborted apply %s: %v", key, err)
+				r.Warnf("failed to cleanup aborted apply %s: %v", key, err)
 			}
 		}
 	}()
@@ -89,10 +89,10 @@ func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layerChai
 		if err != nil {
 			return newLayer, snapshotID, err
 		}
-		r.logger.Infof("apply layer %s...(%v/%v)", layer.Desc.Digest, i+1, layerChain.Len())
+		r.Infof("apply layer %s...(%v/%v)", layer.Desc.Digest, i+1, layerChain.Len())
 		err = r.applyLayerToMount(ctx, m, layer.Desc)
 		if err != nil {
-			r.logger.Warnf("failed to apply layer to mount %q: %v", m, err)
+			r.Warnf("failed to apply layer to mount %q: %v", m, err)
 			return newLayer, snapshotID, err
 		}
 	}
@@ -124,7 +124,7 @@ func (r *Runtime) applyLayerToMount(ctx context.Context, mount []mount.Mount, la
 // createDiff creates a diff between a snapshot and its parent
 func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (Layer, error) {
 	defer r.Track(time.Now(), "createDiff")
-	r.logger.Infof("create diff for snapshot %s", snapshotName)
+	r.Infof("create diff for snapshot %s", snapshotName)
 	var (
 		layer = NewLayer(ocispec.Descriptor{}, digest.Digest(""))
 	)
@@ -150,6 +150,6 @@ func (r *Runtime) createDiff(ctx context.Context, snapshotName string) (Layer, e
 		Size:      info.Size,
 	}
 	layer.DiffID = diffID
-	r.logger.Infof("diff for snapshot %s created", snapshotName)
+	r.Infof("diff for snapshot %s created", snapshotName)
 	return layer, nil
 }

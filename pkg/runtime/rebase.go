@@ -13,36 +13,36 @@ import (
 )
 
 func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
-	r.logger.Infof("start to rebase image %q to layer digest %q", opt.ImageRef, opt.BaseLayerDigest)
+	r.Infof("start to rebase image %q to layer digest %q", opt.ImageRef, opt.BaseLayerDigest)
 	defer r.Track(time.Now(), "rebase")
 	// get the image to be rebased
 	image, err := r.GetImage(ctx, opt.ImageRef)
 	if err != nil {
-		r.logger.Errorf("failed to get original image %q: %v", opt.ImageRef, err)
+		r.Errorf("failed to get original image %q: %v", opt.ImageRef, err)
 		return err
 	}
 	baseLayerDigest, err := digest.Parse(opt.BaseLayerDigest)
 	if err != nil {
-		r.logger.Errorf("failed to parse base layer ref %q: %v", baseLayerDigest, err)
+		r.Errorf("failed to parse base layer ref %q: %v", baseLayerDigest, err)
 		return err
 	}
 	// generate the layers to be rebased
 	layers, baseLayerIndex, err := r.generateLayersToRebase(image, baseLayerDigest)
 	if err != nil {
-		r.logger.Errorf("failed to generate layers to rebase: %v", err)
+		r.Errorf("failed to generate layers to rebase: %v", err)
 		return err
 	}
 	if len(layers.Descriptors) != len(layers.DiffIDs) {
 		return fmt.Errorf("invalid layers to rebase: number of descriptors (%d) does not match number of diff IDs (%d)", len(layers.Descriptors), len(layers.DiffIDs))
 	}
 	if baseLayerIndex == len(layers.Descriptors)-1 {
-		r.logger.Infof("base layer digest %q is the last layer of the image, nothing to rebase", opt.BaseLayerDigest)
+		r.Infof("base layer digest %q is the last layer of the image, nothing to rebase", opt.BaseLayerDigest)
 		return nil
 	}
 	// layers to be rebased
 	layersToRebase, err := NewLayerChain(layers.Descriptors[baseLayerIndex:], layers.DiffIDs[baseLayerIndex:])
 	if err != nil {
-		r.logger.Errorf("failed to create layer chain to rebase: %v", err)
+		r.Errorf("failed to create layer chain to rebase: %v", err)
 		return err
 	}
 
@@ -56,7 +56,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 	// modify the layers according to the rebaseToDoList
 	newLayers, err := r.modifyLayers(ctx, root, layers, baseLayerIndex, rebaseToDoList)
 	if err != nil {
-		r.logger.Errorf("failed to modify layers: %v", err)
+		r.Errorf("failed to modify layers: %v", err)
 		return err
 	}
 	// if NewBaseImageRef is specified, use the config and layers from the new base image
@@ -67,7 +67,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 	if opt.NewBaseImageRef != "" {
 		newBaseImage, err := r.GetImage(ctx, opt.NewBaseImageRef)
 		if err != nil {
-			r.logger.Errorf("failed to get new base image %q: %v", opt.NewBaseImageRef, err)
+			r.Errorf("failed to get new base image %q: %v", opt.NewBaseImageRef, err)
 			return err
 		}
 		baseConfig = newBaseImage.Config
@@ -101,10 +101,10 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 	}
 	// unpack image to the snapshot storage
 	if err := r.UnpackImage(ctx, img, manifestDesc); err != nil {
-		r.logger.Errorf("failed to unpack image %q: %v", img.Name, err)
+		r.Errorf("failed to unpack image %q: %v", img.Name, err)
 		return err
 	}
-	r.logger.Infof("rebase image %q successfully, new image: %q", opt.ImageRef, img.Name)
+	r.Infof("rebase image %q successfully, new image: %q", opt.ImageRef, img.Name)
 	return nil
 }
 

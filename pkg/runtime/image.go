@@ -103,12 +103,12 @@ func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocis
 	arch := baseConfig.Architecture
 	if arch == "" {
 		arch = runtime.GOARCH
-		r.logger.Warnf("assuming arch=%q", arch)
+		r.Warnf("assuming arch=%q", arch)
 	}
 	os := baseConfig.OS
 	if os == "" {
 		os = runtime.GOOS
-		r.logger.Warnf("assuming os=%q", os)
+		r.Warnf("assuming os=%q", os)
 	}
 	author := strings.TrimSpace(defaultAuthor) //TODO: make this configurable
 	if author == "" {
