@@ -89,6 +89,7 @@ func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layerChai
 		if err != nil {
 			return newLayer, snapshotID, err
 		}
+		r.logger.Infof("apply layer %s...(%v/%v)", layer.Desc.Digest, i+1, layerChain.Len())
 		err = r.applyLayerToMount(ctx, m, layer.Desc)
 		if err != nil {
 			r.logger.Warnf("failed to apply layer to mount %q: %v", m, err)
@@ -113,8 +114,7 @@ func (r *Runtime) createSnapshot(ctx context.Context, parent Snapshot, layerChai
 }
 
 func (r *Runtime) applyLayerToMount(ctx context.Context, mount []mount.Mount, layer ocispec.Descriptor) error {
-	defer r.Track(time.Now(), "applyLayerToMount")
-	r.logger.Infof("apply layer %s to mount %q", layer.Digest, mount)
+	defer r.Track(time.Now(), fmt.Sprintf("applyLayer %s", layer.Digest))
 	if _, err := r.differ.Apply(ctx, layer, mount); err != nil {
 		return err
 	}
