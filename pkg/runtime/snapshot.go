@@ -37,7 +37,7 @@ func NewSnapshot(_diffChain []digest.Digest) Snapshot {
 func (s *Snapshot) NewChild(diffID digest.Digest) Snapshot {
 	// make a copy of DiffChain to avoid modification
 	// of the original slice
-	childDiffChain := make([]digest.Digest, len(s.DiffChain), len(s.DiffChain)+1)
+	childDiffChain := make([]digest.Digest, len(s.DiffChain)+1)
 	copy(childDiffChain, s.DiffChain)
 	childDiffChain[len(s.DiffChain)] = diffID
 	return Snapshot{
