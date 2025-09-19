@@ -27,20 +27,34 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 		return err
 	}
 	// generate the layers to be rebased
-	layersToRebase, baseLayerIndex, err := r.generateLayersToRebase(image, baseLayerDigest)
+	layers, baseLayerIndex, err := r.generateLayersToRebase(image, baseLayerDigest)
 	if err != nil {
 		r.logger.Errorf("failed to generate layers to rebase: %v", err)
 		return err
 	}
+	if len(layers.Descriptors) != len(layers.DiffIDs) {
+		return fmt.Errorf("invalid layers to rebase: number of descriptors (%d) does not match number of diff IDs (%d)", len(layers.Descriptors), len(layers.DiffIDs))
+	}
+	if baseLayerIndex == len(layers.Descriptors)-1 {
+		r.logger.Infof("base layer digest %q is the last layer of the image, nothing to rebase", opt.BaseLayerDigest)
+		return nil
+	}
+	// layers to be rebased
+	layersToRebase, err := NewLayerChain(layers.Descriptors[baseLayerIndex:], layers.DiffIDs[baseLayerIndex:])
+	if err != nil {
+		r.logger.Errorf("failed to create layer chain to rebase: %v", err)
+		return err
+	}
+
 	root := NewSnapshot(image.Config.RootFS.DiffIDs[:baseLayerIndex])
 	var rebaseToDoList []string
 	if opt.AutoSquash {
-		rebaseToDoList = getSquashAll(layersToRebase)
+		rebaseToDoList = getSquashAll(layersToRebase.Len())
 	} else {
-		rebaseToDoList = getAllPick(layersToRebase)
+		rebaseToDoList = getAllPick(layersToRebase.Len())
 	}
 	// modify the layers according to the rebaseToDoList
-	newLayers, err := r.modifyLayers(ctx, root, layersToRebase, rebaseToDoList)
+	newLayers, err := r.modifyLayers(ctx, root, layers, baseLayerIndex, rebaseToDoList)
 	if err != nil {
 		r.logger.Errorf("failed to modify layers: %v", err)
 		return err
@@ -94,9 +108,9 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 	return nil
 }
 
-func getSquashAll(layers []Layer) []string {
+func getSquashAll(layerLen int) []string {
 	var toDoList []string
-	for i := range layers {
+	for i := 0; i < layerLen; i++ {
 		if i == 0 {
 			toDoList = append(toDoList, "pick")
 		} else {
@@ -106,20 +120,23 @@ func getSquashAll(layers []Layer) []string {
 	return toDoList
 }
 
-func getAllPick(layers []Layer) []string {
-	toDoList := make([]string, len(layers))
-	for i := range layers {
+func getAllPick(layerLen int) []string {
+	toDoList := make([]string, layerLen)
+	for i := 0; i < layerLen; i++ {
 		toDoList[i] = "pick"
 	}
 	return toDoList
 }
 
-func (r *Runtime) generateLayersToRebase(origImage imageutil.Image, targetLayerRef digest.Digest) ([]Layer, int, error) {
+func (r *Runtime) generateLayersToRebase(origImage imageutil.Image, targetLayerRef digest.Digest) (LayerChain, int, error) {
 	if len(origImage.Manifest.Layers) != len(origImage.Config.RootFS.DiffIDs) {
-		return nil, -1, fmt.Errorf("invalid image %q: number of layers in manifest (%d) does not match number of diff IDs in config (%d)", origImage.Image.Name, len(origImage.Manifest.Layers), len(origImage.Config.RootFS.DiffIDs))
+		return LayerChain{}, -1, fmt.Errorf("invalid image %q: number of layers in manifest (%d) does not match number of diff IDs in config (%d)", origImage.Image.Name, len(origImage.Manifest.Layers), len(origImage.Config.RootFS.DiffIDs))
 	}
 	// find the target layer index
-	imageLayers := make([]Layer, len(origImage.Manifest.Layers))
+	imageLayers, err := NewLayerChain(origImage.Manifest.Layers, origImage.Config.RootFS.DiffIDs)
+	if err != nil {
+		return LayerChain{}, -1, err
+	}
 	targetLayerIdx := -1
 	//TODO: optimize this
 	for i, l := range origImage.Manifest.Layers {
@@ -127,39 +144,49 @@ func (r *Runtime) generateLayersToRebase(origImage imageutil.Image, targetLayerR
 			targetLayerIdx = i
 			break
 		}
-		imageLayers[i] = Layer{
-			Desc:   l,
-			DiffID: origImage.Config.RootFS.DiffIDs[i],
-		}
 	}
 	if targetLayerIdx == -1 {
-		return nil, -1, fmt.Errorf("target layer %q not found in original image %q", targetLayerRef, origImage.Image.Name)
+		return imageLayers, -1, fmt.Errorf("target layer %q not found in original image %q", targetLayerRef, origImage.Image.Name)
 	}
-
-	return imageLayers[targetLayerIdx:], targetLayerIdx, nil
+	return imageLayers, targetLayerIdx, nil
 }
 
-func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layersToRebase []Layer, rebaseToDoList []string) (Layers, error) {
+func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layers LayerChain, baseLayerIdx int, rebaseToDoList []string) (LayerChain, error) {
 	var (
-		layersToSquash          = []Layer{}
-		newLayers               = NewEmptyLayers()
+		layersToSquash          = NewEmptyLayerChain()
+		newLayers               = NewEmptyLayerChain()
 		currentParent  Snapshot = root.Clone()
 	)
 	groupStartIdx := -1 // index in layersToRebase / rebaseDiffIDs where current group started
+	if baseLayerIdx == len(layers.DiffIDs) {
+		// nothing to rebase
+		return newLayers, nil
+	}
+	if baseLayerIdx > len(layers.DiffIDs) {
+		return newLayers, fmt.Errorf("base layer index %d out of range, total layers %d", baseLayerIdx, len(layers.DiffIDs))
+	}
+	// layers to be rebased
+	layersToRebase, err := NewLayerChain(layers.Descriptors[baseLayerIdx:], layers.DiffIDs[baseLayerIdx:])
+	if err != nil {
+		return newLayers, err
+	}
 
 	update := func(layer Layer) {
 		newLayers.AppendLayer(layer)
 		currentParent = currentParent.NewChild(layer.DiffID)
-		layersToSquash = layersToSquash[:0]
+		layersToSquash.Clear()
 	}
 
 	flushGroup := func() error {
-		if len(layersToSquash) == 0 {
+		if layersToSquash.IsEmpty() {
 			return nil
 		}
-		if len(layersToSquash) == 1 {
+		if layersToSquash.Len() == 1 {
 			// Reuse the original single layer & its diffID instead of re-squashing
-			layer := layersToSquash[0]
+			layer, err := layersToSquash.GetLayerByIndex(0)
+			if err != nil {
+				return err
+			}
 			update(layer)
 			return nil
 		}
@@ -170,22 +197,23 @@ func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layersToRebas
 		update(layer)
 		return nil
 	}
-	for i, layer := range layersToRebase {
-		action := rebaseToDoList[i]
+	for i, action := range rebaseToDoList {
+		layer := NewLayer(layersToRebase.Descriptors[i], layersToRebase.DiffIDs[i])
 		switch action {
 		case "fixup":
 			if i == 0 {
 				// the first layer cannot be fixed up
 				return newLayers, fmt.Errorf("the first layer cannot be fixed up")
 			}
-			layersToSquash = append(layersToSquash, layer)
+			layersToSquash.AppendLayer(layer)
 		case "pick":
-			if len(layersToSquash) > 0 {
+			if layersToSquash.Len() > 0 {
 				if err := flushGroup(); err != nil {
 					return newLayers, err
 				}
 			}
-			layersToSquash = []Layer{layer}
+			layersToSquash.Clear()
+			layersToSquash.AppendLayer(layer)
 			groupStartIdx = i
 
 		default:
@@ -196,7 +224,7 @@ func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layersToRebas
 		}
 	}
 	// remember to handle the leftover items in layersToSquash
-	if len(layersToSquash) > 0 {
+	if layersToSquash.Len() > 0 {
 		if err := flushGroup(); err != nil {
 			return newLayers, err
 		}
@@ -204,7 +232,7 @@ func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layersToRebas
 	return newLayers, nil
 }
 
-func (r *Runtime) squashLayers(ctx context.Context, parent Snapshot, layersToSquash []Layer) (Layer, error) {
+func (r *Runtime) squashLayers(ctx context.Context, parent Snapshot, layersToSquash LayerChain) (Layer, error) {
 	newLayer, _, err := r.createSnapshot(ctx, parent, layersToSquash)
 	if err != nil {
 		return newLayer, fmt.Errorf("failed to apply layers to snapshot: %w", err)

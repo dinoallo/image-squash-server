@@ -1,65 +1,97 @@
 package runtime
 
 import (
+	"fmt"
+
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type Layers struct {
+// The items of descriptors and diffIDs can be safely appended, removed, modified (excluding the content of each item)
+// because we always make a copy when creating a new LayerChain
+type LayerChain struct {
 	// This is referred in image manifest
 	Descriptors []ocispec.Descriptor
 	// This is referred in image config
 	DiffIDs []digest.Digest
 }
 
-func NewLayers(_descriptors []ocispec.Descriptor, _diffIDs []digest.Digest) Layers {
+func NewLayerChain(_descriptors []ocispec.Descriptor, _diffIDs []digest.Digest) (LayerChain, error) {
+	if len(_descriptors) != len(_diffIDs) {
+		return LayerChain{}, fmt.Errorf("number of descriptors (%d) does not match number of diff IDs (%d)", len(_descriptors), len(_diffIDs))
+	}
 	descriptors := make([]ocispec.Descriptor, len(_descriptors))
 	copy(descriptors, _descriptors)
 	diffIDs := make([]digest.Digest, len(_diffIDs))
 	copy(diffIDs, _diffIDs)
-	return Layers{
+	return LayerChain{
 		Descriptors: descriptors,
 		DiffIDs:     diffIDs,
-	}
+	}, nil
 }
 
-func NewLayersFromLayer(layer Layer) Layers {
-	return Layers{
+func NewLayerChainFromLayer(layer Layer) LayerChain {
+	return LayerChain{
 		Descriptors: []ocispec.Descriptor{layer.Desc},
 		DiffIDs:     []digest.Digest{layer.DiffID},
 	}
 }
 
-func NewEmptyLayers() Layers {
-	return Layers{
+func NewEmptyLayerChain() LayerChain {
+	return LayerChain{
 		Descriptors: []ocispec.Descriptor{},
 		DiffIDs:     []digest.Digest{},
 	}
 }
 
-func (l *Layers) AppendLayer(layer Layer) {
-	l.Descriptors = append(l.Descriptors, layer.Desc)
-	l.DiffIDs = append(l.DiffIDs, layer.DiffID)
+func (l *LayerChain) Len() int {
+	return len(l.Descriptors)
 }
 
-func (l *Layers) AppendLayers(layers Layers) {
+func (l *LayerChain) IsEmpty() bool {
+	return l.Len() == 0
+}
+
+func (l *LayerChain) Clear() {
+	l.Descriptors = l.Descriptors[:0]
+	l.DiffIDs = l.DiffIDs[:0]
+}
+
+func (l *LayerChain) AppendLayers(layers LayerChain) {
 	//TODO: optimize memory allocation
 	l.Descriptors = append(l.Descriptors, layers.Descriptors...)
 	l.DiffIDs = append(l.DiffIDs, layers.DiffIDs...)
 }
 
-// Layer represents an image layer along with its DiffID
+func (l *LayerChain) AppendLayer(layer Layer) {
+	//TODO: optimize memory allocation
+	l.Descriptors = append(l.Descriptors, layer.Desc)
+	l.DiffIDs = append(l.DiffIDs, layer.DiffID)
+}
+
+func (l *LayerChain) GetLayerByIndex(index int) (Layer, error) {
+	if index < 0 || index >= l.Len() {
+		return Layer{}, fmt.Errorf("index %d out of range, layer chain length is %d", index, l.Len())
+	}
+	return Layer{
+		Desc:   l.Descriptors[index],
+		DiffID: l.DiffIDs[index],
+	}, nil
+}
+
+// The content of Desc and DiffID can not be modified
 type Layer struct {
-	// This is referred in image manifest
-	Desc ocispec.Descriptor
-	// An image layer DiffID is the digest over the image layer's uncompressed archive and serialized in the descriptor digest format
+	Desc   ocispec.Descriptor
 	DiffID digest.Digest
 }
 
 func NewLayer(desc ocispec.Descriptor, diffID digest.Digest) Layer {
-	//TODO: deep copy?
 	return Layer{
 		Desc:   desc,
 		DiffID: diffID,
 	}
+}
+
+func NewEmptyLayer() Layer {
+	return Layer{}
 }

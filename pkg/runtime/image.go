@@ -98,7 +98,7 @@ func (r *Runtime) UnpackImage(ctx context.Context, img images.Image, manifestDes
 }
 
 // GenerateMergedImageConfig generates a new image config by merging the base image config and the new layers.
-func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocispec.Image, newLayers Layers) (ocispec.Image, error) {
+func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocispec.Image, newLayers LayerChain) (ocispec.Image, error) {
 	createdTime := time.Now()
 	arch := baseConfig.Architecture
 	if arch == "" {
@@ -127,7 +127,7 @@ func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocis
 	}, nil
 }
 
-func generateRootFS(baseRootfs ocispec.RootFS, layers Layers) ocispec.RootFS {
+func generateRootFS(baseRootfs ocispec.RootFS, layers LayerChain) ocispec.RootFS {
 	diffIDs := make([]digest.Digest, 0, len(baseRootfs.DiffIDs)+len(layers.DiffIDs))
 	copy(diffIDs, baseRootfs.DiffIDs)
 	return ocispec.RootFS{
@@ -136,7 +136,7 @@ func generateRootFS(baseRootfs ocispec.RootFS, layers Layers) ocispec.RootFS {
 	}
 }
 
-func generateHistory(_history []ocispec.History, layers Layers) []ocispec.History {
+func generateHistory(_history []ocispec.History, layers LayerChain) []ocispec.History {
 	history := make([]ocispec.History, 0, len(_history)+len(layers.Descriptors))
 	copy(history, _history)
 	author := strings.TrimSpace(defaultAuthor)   //TODO: make this configurable

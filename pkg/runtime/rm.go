@@ -30,7 +30,7 @@ func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOptions) error {
 		r.logger.Errorf("failed to create removal layer for file %q: %v", opt.File, err)
 		return err
 	}
-	newLayers := NewLayersFromLayer(layer)
+	newLayers := NewLayerChainFromLayer(layer)
 	baseLayers := image.Manifest.Layers
 	manifestDesc, err := r.WriteBack(ctx, image.Config, baseLayers, newLayers)
 	if err != nil {

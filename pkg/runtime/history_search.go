@@ -33,12 +33,15 @@ type historyPrintable struct {
 }
 
 // ImageHistory returns the history entries for the given image reference.
-func (r *Runtime) ImageHistory(ctx context.Context, imageRef string) (Layers, []ocispec.History, error) {
+func (r *Runtime) ImageHistory(ctx context.Context, imageRef string) (LayerChain, []ocispec.History, error) {
 	img, err := r.GetImage(ctx, imageRef)
 	if err != nil {
-		return NewEmptyLayers(), nil, err
+		return LayerChain{}, nil, err
 	}
-	layers := NewLayers(img.Manifest.Layers, img.Config.RootFS.DiffIDs)
+	layers, err := NewLayerChain(img.Manifest.Layers, img.Config.RootFS.DiffIDs)
+	if err != nil {
+		return LayerChain{}, nil, err
+	}
 	return layers, img.Config.History, nil
 }
 
