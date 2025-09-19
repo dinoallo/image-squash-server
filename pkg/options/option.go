@@ -22,13 +22,17 @@ type VerifyBaseOptions struct {
 	BaseImage     string `json:"base_image"`
 }
 
-type SearchHistoryOptions struct {
+type HistoryOptions struct {
 	RootOptions
 	ImageRef string `json:"image_ref"`
-	Keyword  string `json:"keyword"`
 	Format   string `json:"format"`
 	Quiet    bool   `json:"quiet"`
 	NoTrunc  bool   `json:"no_trunc"`
+}
+
+type SearchHistoryOptions struct {
+	HistoryOptions
+	Keyword string `json:"keyword"`
 }
 
 type RootOptions struct {

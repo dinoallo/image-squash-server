@@ -84,8 +84,61 @@ func (r *Runtime) LastestCommentContains(ctx context.Context, imageRef string, p
 	return "", fmt.Errorf("no matching comment found")
 }
 
-// SearchImageHistory searches the image history for entries matching the given keyword.
+func (r *Runtime) ListImageHistory(ctx context.Context, opts options.HistoryOptions) error {
+	layers, histories, err := r.ImageHistory(ctx, opts.ImageRef)
+	if err != nil {
+		return err
+	}
+	if len(layers.Descriptors) != len(layers.DiffIDs) {
+		return fmt.Errorf("invalid image: number of layers descriptors and diff IDs do not match")
+	}
+	layerLen := len(layers.DiffIDs)
+	layerIndex := 0
+	lastSnapshotName := ""
+	lastLayerName := ""
+	var all []historyPrintable
+	for _, h := range histories {
+		var (
+			size  string
+			empty bool
+		)
+		if layerLen <= layerIndex {
+			break
+		}
+		if !h.EmptyLayer {
+			chainID := identity.ChainID(layers.DiffIDs[0 : layerIndex+1]).String()
+			stat, err := r.snapshotter.Stat(ctx, chainID)
+			if err != nil {
+				return fmt.Errorf("failed to get stat: %w", err)
+			}
+			use, err := r.snapshotter.Usage(ctx, chainID)
+			if err != nil {
+				return fmt.Errorf("failed to get usage: %w", err)
+			}
+			size = progress.Bytes(use.Size).String()
+			lastSnapshotName = stat.Name
+			lastLayerName = layers.Descriptors[layerIndex].Digest.String()
+			layerIndex++
+		} else {
+			size = progress.Bytes(0).String()
+			empty = true
+		}
+		history := historyPrintable{
+			LastSnapshot: lastSnapshotName,
+			LastLayer:    lastLayerName,
+			CreatedSince: formatter.TimeSinceInHuman(*h.Created),
+			CreatedBy:    h.CreatedBy,
+			Size:         size,
+			Comment:      h.Comment,
+			Empty:        empty,
+		}
+		all = append(all, history)
+	}
+	return printHistory(all, opts)
+}
 
+// SearchImageHistory searches the image history for entries matching the given keyword.
+// TODO: merge this function with ListImageHistory
 func (r *Runtime) SearchImageHistory(ctx context.Context, opts options.SearchHistoryOptions) error {
 	layers, histories, err := r.ImageHistory(ctx, opts.ImageRef)
 	if err != nil {
@@ -138,7 +191,7 @@ func (r *Runtime) SearchImageHistory(ctx context.Context, opts options.SearchHis
 			matched = append(matched, history)
 		}
 	}
-	return printHistory(matched, opts)
+	return printHistory(matched, opts.HistoryOptions)
 }
 
 /*
@@ -158,7 +211,7 @@ type historyPrinter struct {
 	tmpl           *template.Template
 }
 
-func printHistory(histories []historyPrintable, opts options.SearchHistoryOptions) error {
+func printHistory(histories []historyPrintable, opts options.HistoryOptions) error {
 	var tmpl *template.Template
 	format := opts.Format
 	quiet := opts.Quiet

@@ -12,6 +12,7 @@ func NewCmdHistory() *cobra.Command {
 		Short: "Inspect image history",
 	}
 	historyCmd.AddCommand(newHistorySearchCmd())
+	historyCmd.AddCommand(newHistoryListCmd())
 	addHistoryFlags(historyCmd)
 	return historyCmd
 }
@@ -25,6 +26,16 @@ func addHistoryFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("no-trunc", false, "Don't truncate output")
 }
 
+func newHistoryListCmd() *cobra.Command {
+	listCmd := &cobra.Command{
+		Use:   "list IMAGE",
+		Short: "List image history",
+		Args:  cobra.ExactArgs(1),
+		RunE:  historyListAction,
+	}
+	return listCmd
+}
+
 func newHistorySearchCmd() *cobra.Command {
 	searchCmd := &cobra.Command{
 		Use:   "search IMAGE KEYWORD",
@@ -33,6 +44,22 @@ func newHistorySearchCmd() *cobra.Command {
 		RunE:  historySearchAction,
 	}
 	return searchCmd
+}
+
+func historyListAction(cmd *cobra.Command, args []string) error {
+	historyOptions, err := processHistoryCmdFlags(cmd)
+	if err != nil {
+		return err
+	}
+	historyOptions.ImageRef = args[0]
+	runtimeObj, err := runtime.NewRuntime(cmd.Context(), historyOptions.RootOptions)
+	if err != nil {
+		return err
+	}
+	if err := runtimeObj.ListImageHistory(runtimeObj.Context(), historyOptions); err != nil {
+		return err
+	}
+	return nil
 }
 
 func historySearchAction(cmd *cobra.Command, args []string) error {
@@ -52,9 +79,9 @@ func historySearchAction(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func processSearchHistoryCmdFlags(cmd *cobra.Command) (options.SearchHistoryOptions, error) {
+func processHistoryCmdFlags(cmd *cobra.Command) (options.HistoryOptions, error) {
 	var err error
-	o := options.SearchHistoryOptions{}
+	o := options.HistoryOptions{}
 	o.RootOptions, err = processRootCmdFlags(cmd)
 	if err != nil {
 		// handle error
@@ -71,6 +98,17 @@ func processSearchHistoryCmdFlags(cmd *cobra.Command) (options.SearchHistoryOpti
 		return o, err
 	}
 	o.NoTrunc, err = cmd.Flags().GetBool("no-trunc")
+	if err != nil {
+		// handle error
+		return o, err
+	}
+	return o, nil
+}
+
+func processSearchHistoryCmdFlags(cmd *cobra.Command) (options.SearchHistoryOptions, error) {
+	var err error
+	o := options.SearchHistoryOptions{}
+	o.HistoryOptions, err = processHistoryCmdFlags(cmd)
 	if err != nil {
 		// handle error
 		return o, err
