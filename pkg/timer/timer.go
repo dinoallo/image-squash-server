@@ -26,5 +26,5 @@ func NewTimerImpl(logger *logrus.Logger) (*TimerImpl, error) {
 
 func (t *TimerImpl) Track(start time.Time, name string) {
 	elapsed := time.Since(start)
-	t.Infof("(%s) cost %s", name, elapsed.Truncate(time.Millisecond).String())
+	t.Infof("%s cost %s", name, elapsed.Truncate(time.Millisecond).String())
 }
