@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/images"
-	imageutil "github.com/lingdie/image-manip-server/pkg/images"
 	"github.com/lingdie/image-manip-server/pkg/options"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -26,27 +25,30 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 		r.Errorf("failed to parse base layer ref %q: %v", baseLayerDigest, err)
 		return err
 	}
+	layers, err := NewLayerChain(image.Manifest.Layers, image.Config.RootFS.DiffIDs)
+	if err != nil {
+		return err
+	}
 	// generate the layers to be rebased
-	layers, baseLayerIndex, err := r.generateLayersToRebase(image, baseLayerDigest)
+	baseLayerIndex, err := r.getBaseLayerIndex(layers, baseLayerDigest)
 	if err != nil {
 		r.Errorf("failed to generate layers to rebase: %v", err)
 		return err
 	}
-	if len(layers.Descriptors) != len(layers.DiffIDs) {
-		return fmt.Errorf("invalid layers to rebase: number of descriptors (%d) does not match number of diff IDs (%d)", len(layers.Descriptors), len(layers.DiffIDs))
-	}
-	if baseLayerIndex == len(layers.Descriptors)-1 {
+	firstLayerIndexToRebase := baseLayerIndex + 1
+	// if the base layer is the last layer, nothing to do
+	if firstLayerIndexToRebase == layers.Len() {
 		r.Infof("base layer digest %q is the last layer of the image, nothing to rebase", opt.BaseLayerDigest)
 		return nil
 	}
 	// layers to be rebased
-	layersToRebase, err := NewLayerChain(layers.Descriptors[baseLayerIndex:], layers.DiffIDs[baseLayerIndex:])
+	layersToRebase, err := NewLayerChain(layers.Descriptors[firstLayerIndexToRebase:], layers.DiffIDs[firstLayerIndexToRebase:])
 	if err != nil {
 		r.Errorf("failed to create layer chain to rebase: %v", err)
 		return err
 	}
 
-	root := NewSnapshot(image.Config.RootFS.DiffIDs[:baseLayerIndex])
+	root := NewSnapshot(image.Config.RootFS.DiffIDs[:firstLayerIndexToRebase])
 	var rebaseToDoList []string
 	if opt.AutoSquash {
 		rebaseToDoList = getSquashAll(layersToRebase.Len())
@@ -74,7 +76,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 		baseLayers = newBaseImage.Manifest.Layers
 	} else {
 		baseConfig = image.Config
-		baseLayers = image.Manifest.Layers[:baseLayerIndex]
+		baseLayers = image.Manifest.Layers[:firstLayerIndexToRebase]
 	}
 	// finally, write back the new image to the image store
 	manifestDesc, err := r.WriteBack(ctx, baseConfig, baseLayers, newLayers)
@@ -128,45 +130,33 @@ func getAllPick(layerLen int) []string {
 	return toDoList
 }
 
-func (r *Runtime) generateLayersToRebase(origImage imageutil.Image, targetLayerRef digest.Digest) (LayerChain, int, error) {
-	if len(origImage.Manifest.Layers) != len(origImage.Config.RootFS.DiffIDs) {
-		return LayerChain{}, -1, fmt.Errorf("invalid image %q: number of layers in manifest (%d) does not match number of diff IDs in config (%d)", origImage.Image.Name, len(origImage.Manifest.Layers), len(origImage.Config.RootFS.DiffIDs))
-	}
-	// find the target layer index
-	imageLayers, err := NewLayerChain(origImage.Manifest.Layers, origImage.Config.RootFS.DiffIDs)
-	if err != nil {
-		return LayerChain{}, -1, err
-	}
-	targetLayerIdx := -1
+func (r *Runtime) getBaseLayerIndex(layerChain LayerChain, baseLayerRef digest.Digest) (int, error) {
+	baseLayerIdx := -1
 	//TODO: optimize this
-	for i, l := range origImage.Manifest.Layers {
-		if l.Digest == targetLayerRef {
-			targetLayerIdx = i
+	for i, l := range layerChain.Descriptors {
+		if l.Digest == baseLayerRef {
+			baseLayerIdx = i
 			break
 		}
 	}
-	if targetLayerIdx == -1 {
-		return imageLayers, -1, fmt.Errorf("target layer %q not found in original image %q", targetLayerRef, origImage.Image.Name)
+	if baseLayerIdx == -1 {
+		return -1, fmt.Errorf("base layer %q not found", baseLayerRef)
 	}
-	return imageLayers, targetLayerIdx, nil
+	return baseLayerIdx, nil
 }
 
-func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layers LayerChain, baseLayerIdx int, rebaseToDoList []string) (LayerChain, error) {
+func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layers LayerChain, firstLayerIndexToRebase int, rebaseToDoList []string) (LayerChain, error) {
 	var (
 		layersToSquash          = NewEmptyLayerChain()
 		newLayers               = NewEmptyLayerChain()
 		currentParent  Snapshot = root.Clone()
 	)
 	groupStartIdx := -1 // index in layersToRebase / rebaseDiffIDs where current group started
-	if baseLayerIdx == len(layers.DiffIDs) {
-		// nothing to rebase
-		return newLayers, nil
-	}
-	if baseLayerIdx > len(layers.DiffIDs) {
-		return newLayers, fmt.Errorf("base layer index %d out of range, total layers %d", baseLayerIdx, len(layers.DiffIDs))
+	if firstLayerIndexToRebase >= layers.Len() {
+		return newLayers, fmt.Errorf("first layer index %d out of range, total layers %d", firstLayerIndexToRebase, layers.Len())
 	}
 	// layers to be rebased
-	layersToRebase, err := NewLayerChain(layers.Descriptors[baseLayerIdx:], layers.DiffIDs[baseLayerIdx:])
+	layersToRebase, err := NewLayerChain(layers.Descriptors[firstLayerIndexToRebase:], layers.DiffIDs[firstLayerIndexToRebase:])
 	if err != nil {
 		return newLayers, err
 	}
