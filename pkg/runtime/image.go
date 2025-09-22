@@ -98,21 +98,21 @@ func (r *Runtime) UnpackImage(ctx context.Context, img images.Image, manifestDes
 }
 
 // GenerateMergedImageConfig generates a new image config by merging the base image config and the new layers.
-func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocispec.Image, newLayers LayerChain) (ocispec.Image, error) {
+func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, origConfig ocispec.Image, firstLayerIndexToRebase int, baseLayers, newLayers LayerChain) (ocispec.Image, error) {
 	createdTime := time.Now()
-	arch := baseConfig.Architecture
+	arch := origConfig.Architecture
 	if arch == "" {
 		arch = runtime.GOARCH
 		r.Warnf("assuming arch=%q", arch)
 	}
-	os := baseConfig.OS
+	os := origConfig.OS
 	if os == "" {
 		os = runtime.GOOS
 		r.Warnf("assuming os=%q", os)
 	}
 	author := strings.TrimSpace(defaultAuthor) //TODO: make this configurable
 	if author == "" {
-		author = baseConfig.Author
+		author = origConfig.Author
 	}
 	return ocispec.Image{
 		Platform: ocispec.Platform{
@@ -121,24 +121,40 @@ func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocis
 		},
 		Created: &createdTime,
 		Author:  author,
-		Config:  baseConfig.Config,
-		RootFS:  generateRootFS(baseConfig.RootFS, newLayers),
-		History: generateHistory(baseConfig.History, newLayers),
+		Config:  origConfig.Config,
+		RootFS:  generateRootFS(baseLayers, newLayers),
+		History: generateHistory(origConfig.History, firstLayerIndexToRebase, newLayers),
 	}, nil
 }
 
-func generateRootFS(baseRootfs ocispec.RootFS, newLayers LayerChain) ocispec.RootFS {
-	diffIDs := make([]digest.Digest, 0, len(baseRootfs.DiffIDs)+len(newLayers.DiffIDs))
-	copy(diffIDs, baseRootfs.DiffIDs)
+func generateRootFS(baseLayers, newLayers LayerChain) ocispec.RootFS {
+	diffIDs := make([]digest.Digest, len(baseLayers.DiffIDs)+len(newLayers.DiffIDs))
+	copy(diffIDs, baseLayers.DiffIDs)
+	copy(diffIDs[len(baseLayers.DiffIDs):], newLayers.DiffIDs)
 	return ocispec.RootFS{
 		Type:    "layers",
-		DiffIDs: append(diffIDs, newLayers.DiffIDs...),
+		DiffIDs: diffIDs,
 	}
 }
 
-func generateHistory(_history []ocispec.History, newLayers LayerChain) []ocispec.History {
-	history := make([]ocispec.History, 0, len(_history)+len(newLayers.Descriptors))
-	copy(history, _history)
+func generateHistory(origHistory []ocispec.History, firstLayerIndexToRebase int, newLayers LayerChain) []ocispec.History {
+	history := []ocispec.History{}
+	nonEmptyLayerCount := 0
+	for _, h := range origHistory {
+		history = append(history, ocispec.History{
+			Created:    h.Created,
+			CreatedBy:  h.CreatedBy,
+			Author:     h.Author,
+			Comment:    h.Comment,
+			EmptyLayer: h.EmptyLayer,
+		})
+		if !h.EmptyLayer {
+			nonEmptyLayerCount++
+		}
+		if nonEmptyLayerCount >= firstLayerIndexToRebase {
+			break
+		}
+	}
 	author := strings.TrimSpace(defaultAuthor)   //TODO: make this configurable
 	comment := strings.TrimSpace(defaultMessage) //TODO: make this configurable
 	for _, layer := range newLayers.Descriptors {

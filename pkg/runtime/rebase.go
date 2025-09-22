@@ -64,7 +64,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 	// if NewBaseImageRef is specified, use the config and layers from the new base image
 	// otherwise, use the config and layers from the original image up to the base layer
 	// then append the new layers
-	var baseConfig ocispec.Image
+	var origConfig ocispec.Image
 	var baseLayers LayerChain
 	if opt.NewBaseImageRef != "" {
 		newBaseImage, err := r.GetImage(ctx, opt.NewBaseImageRef)
@@ -72,14 +72,14 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 			r.Errorf("failed to get new base image %q: %v", opt.NewBaseImageRef, err)
 			return err
 		}
-		baseConfig = newBaseImage.Config
+		origConfig = newBaseImage.Config
 		baseLayers, err = NewLayerChain(newBaseImage.Manifest.Layers, newBaseImage.Config.RootFS.DiffIDs)
 		if err != nil {
 			r.Errorf("failed to create layer chain for new base image %q: %v", opt.NewBaseImageRef, err)
 			return err
 		}
 	} else {
-		baseConfig = image.Config
+		origConfig = image.Config
 		baseLayers, err = NewLayerChain(image.Manifest.Layers[:firstLayerIndexToRebase], image.Config.RootFS.DiffIDs[:firstLayerIndexToRebase])
 		if err != nil {
 			r.Errorf("failed to create layer chain for original image %q: %v", opt.ImageRef, err)
@@ -87,7 +87,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 		}
 	}
 	// finally, write back the new image to the image store
-	manifestDesc, err := r.WriteBack(ctx, baseConfig, baseLayers, newLayers)
+	manifestDesc, err := r.WriteBack(ctx, origConfig, firstLayerIndexToRebase, baseLayers, newLayers)
 	if err != nil {
 		return err
 	}
