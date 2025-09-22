@@ -21,8 +21,8 @@ func NewCmdRemove() *cobra.Command {
 
 func removeAction(cmd *cobra.Command, args []string) error {
 	var (
-		file     = args[0]
-		imageRef = args[1]
+		imageRef = args[0]
+		file     = args[1]
 	)
 
 	opts, err := processRemoveCmdFlags(cmd)
