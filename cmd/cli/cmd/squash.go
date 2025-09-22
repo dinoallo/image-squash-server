@@ -56,12 +56,16 @@ func squashAction(cmd *cobra.Command, args []string) error {
 		runtimeObj.Infof("No base layer digest provided, attempting to detect it intelligently...")
 		// detect the base layer if not provided
 
-		baseLayerDigest, err := runtimeObj.LastestCommentContains(runtimeObj.Context(), imageRef, defaultDockerfileComment)
+		possibleBaseLayerDigests, err := runtimeObj.CommentContains(runtimeObj.Context(), imageRef, defaultDockerfileComment)
 		if err != nil {
 			return err
 		}
-		rebaseOptions.BaseLayerDigest = baseLayerDigest.String()
-		runtimeObj.Infof("Detected base layer digest: %s\n", rebaseOptions.BaseLayerDigest)
+		if len(possibleBaseLayerDigests) > 0 {
+			rebaseOptions.BaseLayerDigest = possibleBaseLayerDigests[0].String()
+			runtimeObj.Infof("Detected base layer digest: %s\n", rebaseOptions.BaseLayerDigest)
+		} else {
+			runtimeObj.Infof("No layer with comment %q found. you might want to specify it manually.\n", defaultDockerfileComment)
+		}
 	}
 
 	// do the rebase

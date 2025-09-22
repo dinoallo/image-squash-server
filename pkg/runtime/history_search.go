@@ -45,29 +45,11 @@ func (r *Runtime) ImageHistory(ctx context.Context, imageRef string) (LayerChain
 	return layers, img.Config.History, nil
 }
 
-func (r *Runtime) CommentContains(ctx context.Context, imageRef string, pattern string) (digest.Digest, error) {
+func (r *Runtime) CommentContains(ctx context.Context, imageRef string, pattern string) ([]digest.Digest, error) {
+	var digests []digest.Digest
 	layers, histories, err := r.ImageHistory(ctx, imageRef)
 	if err != nil {
-		return "", err
-	}
-	layerIndex := 0
-	for _, h := range histories {
-		if h.EmptyLayer {
-			continue
-		}
-		if strings.Contains(h.Comment, pattern) {
-			// Found a matching comment
-			return layers.Descriptors[layerIndex].Digest, nil
-		}
-		layerIndex++
-	}
-	return "", fmt.Errorf("no matching comment found")
-}
-
-func (r *Runtime) LastestCommentContains(ctx context.Context, imageRef string, pattern string) (digest.Digest, error) {
-	layers, histories, err := r.ImageHistory(ctx, imageRef)
-	if err != nil {
-		return "", err
+		return digests, err
 	}
 	layerIndex := len(layers.Descriptors) - 1
 	for i := len(histories) - 1; i >= 0; i-- {
@@ -77,11 +59,11 @@ func (r *Runtime) LastestCommentContains(ctx context.Context, imageRef string, p
 		}
 		if strings.Contains(h.Comment, pattern) {
 			// Found a matching comment
-			return layers.Descriptors[layerIndex].Digest, nil
+			digests = append(digests, layers.Descriptors[layerIndex].Digest)
 		}
 		layerIndex--
 	}
-	return "", fmt.Errorf("no matching comment found")
+	return digests, nil
 }
 
 func (r *Runtime) ListImageHistory(ctx context.Context, opts options.HistoryOptions) error {
