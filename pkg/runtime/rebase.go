@@ -56,7 +56,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 		rebaseToDoList = getAllPick(layersToRebase.Len())
 	}
 	// modify the layers according to the rebaseToDoList
-	newLayers, err := r.modifyLayers(ctx, root, layers, baseLayerIndex, rebaseToDoList)
+	newLayers, err := r.modifyLayers(ctx, root, layersToRebase, rebaseToDoList)
 	if err != nil {
 		r.Errorf("failed to modify layers: %v", err)
 		return err
@@ -65,7 +65,7 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 	// otherwise, use the config and layers from the original image up to the base layer
 	// then append the new layers
 	var baseConfig ocispec.Image
-	var baseLayers []ocispec.Descriptor
+	var baseLayers LayerChain
 	if opt.NewBaseImageRef != "" {
 		newBaseImage, err := r.GetImage(ctx, opt.NewBaseImageRef)
 		if err != nil {
@@ -73,10 +73,18 @@ func (r *Runtime) Rebase(ctx context.Context, opt options.RebaseOptions) error {
 			return err
 		}
 		baseConfig = newBaseImage.Config
-		baseLayers = newBaseImage.Manifest.Layers
+		baseLayers, err = NewLayerChain(newBaseImage.Manifest.Layers, newBaseImage.Config.RootFS.DiffIDs)
+		if err != nil {
+			r.Errorf("failed to create layer chain for new base image %q: %v", opt.NewBaseImageRef, err)
+			return err
+		}
 	} else {
 		baseConfig = image.Config
-		baseLayers = image.Manifest.Layers[:firstLayerIndexToRebase]
+		baseLayers, err = NewLayerChain(image.Manifest.Layers[:firstLayerIndexToRebase], image.Config.RootFS.DiffIDs[:firstLayerIndexToRebase])
+		if err != nil {
+			r.Errorf("failed to create layer chain for original image %q: %v", opt.ImageRef, err)
+			return err
+		}
 	}
 	// finally, write back the new image to the image store
 	manifestDesc, err := r.WriteBack(ctx, baseConfig, baseLayers, newLayers)
@@ -145,21 +153,13 @@ func (r *Runtime) getBaseLayerIndex(layerChain LayerChain, baseLayerRef digest.D
 	return baseLayerIdx, nil
 }
 
-func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layers LayerChain, firstLayerIndexToRebase int, rebaseToDoList []string) (LayerChain, error) {
+func (r *Runtime) modifyLayers(ctx context.Context, root Snapshot, layersToRebase LayerChain, rebaseToDoList []string) (LayerChain, error) {
 	var (
 		layersToSquash          = NewEmptyLayerChain()
 		newLayers               = NewEmptyLayerChain()
 		currentParent  Snapshot = root.Clone()
 	)
 	groupStartIdx := -1 // index in layersToRebase / rebaseDiffIDs where current group started
-	if firstLayerIndexToRebase >= layers.Len() {
-		return newLayers, fmt.Errorf("first layer index %d out of range, total layers %d", firstLayerIndexToRebase, layers.Len())
-	}
-	// layers to be rebased
-	layersToRebase, err := NewLayerChain(layers.Descriptors[firstLayerIndexToRebase:], layers.DiffIDs[firstLayerIndexToRebase:])
-	if err != nil {
-		return newLayers, err
-	}
 
 	update := func(layer Layer) {
 		newLayers.AppendLayer(layer)

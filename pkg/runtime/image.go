@@ -127,21 +127,21 @@ func (r *Runtime) GenerateMergedImageConfig(ctx context.Context, baseConfig ocis
 	}, nil
 }
 
-func generateRootFS(baseRootfs ocispec.RootFS, layers LayerChain) ocispec.RootFS {
-	diffIDs := make([]digest.Digest, 0, len(baseRootfs.DiffIDs)+len(layers.DiffIDs))
+func generateRootFS(baseRootfs ocispec.RootFS, newLayers LayerChain) ocispec.RootFS {
+	diffIDs := make([]digest.Digest, 0, len(baseRootfs.DiffIDs)+len(newLayers.DiffIDs))
 	copy(diffIDs, baseRootfs.DiffIDs)
 	return ocispec.RootFS{
 		Type:    "layers",
-		DiffIDs: append(diffIDs, layers.DiffIDs...),
+		DiffIDs: append(diffIDs, newLayers.DiffIDs...),
 	}
 }
 
-func generateHistory(_history []ocispec.History, layers LayerChain) []ocispec.History {
-	history := make([]ocispec.History, 0, len(_history)+len(layers.Descriptors))
+func generateHistory(_history []ocispec.History, newLayers LayerChain) []ocispec.History {
+	history := make([]ocispec.History, 0, len(_history)+len(newLayers.Descriptors))
 	copy(history, _history)
 	author := strings.TrimSpace(defaultAuthor)   //TODO: make this configurable
 	comment := strings.TrimSpace(defaultMessage) //TODO: make this configurable
-	for _, layer := range layers.Descriptors {
+	for _, layer := range newLayers.Descriptors {
 		history = append(history, ocispec.History{
 			Created:    nil,
 			CreatedBy:  "ADD " + layer.Digest.String() + " in " + layer.MediaType,

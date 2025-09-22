@@ -102,7 +102,7 @@ func (r *Runtime) writeImageConfig(ctx context.Context, config ocispec.Image) (o
 	return configDesc, nil
 }
 
-func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseLayers []ocispec.Descriptor, newLayers LayerChain) (ocispec.Descriptor, error) {
+func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseLayers LayerChain, newLayers LayerChain) (ocispec.Descriptor, error) {
 	// generate image config
 	imageConfig, err := r.GenerateMergedImageConfig(ctx, baseConfig, newLayers)
 	if err != nil {
@@ -110,8 +110,8 @@ func (r *Runtime) WriteBack(ctx context.Context, baseConfig ocispec.Image, baseL
 		return ocispec.Descriptor{}, err
 	}
 	allLayers, err := NewLayerChain(
-		baseLayers,
-		baseConfig.RootFS.DiffIDs,
+		baseLayers.Descriptors,
+		baseLayers.DiffIDs,
 	)
 	if err != nil {
 		return ocispec.Descriptor{}, err

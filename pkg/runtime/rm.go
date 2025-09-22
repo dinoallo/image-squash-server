@@ -31,7 +31,11 @@ func (r *Runtime) Remove(ctx context.Context, opt options.RemoveOptions) error {
 		return err
 	}
 	newLayers := NewLayerChainFromLayer(layer)
-	baseLayers := image.Manifest.Layers
+	baseLayers, err := NewLayerChain(image.Manifest.Layers, image.Config.RootFS.DiffIDs)
+	if err != nil {
+		r.Errorf("failed to create layer chain for original image %q: %v", opt.ImageRef, err)
+		return err
+	}
 	manifestDesc, err := r.WriteBack(ctx, image.Config, baseLayers, newLayers)
 	if err != nil {
 		r.Errorf("failed to write back image %q: %v", opt.ImageRef, err)
