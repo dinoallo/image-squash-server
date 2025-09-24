@@ -89,26 +89,22 @@ func (r *Runtime) UpdateImage(ctx context.Context, img images.Image) (images.Ima
 }
 
 // Tag creates a new image name (tag) pointing to the same target as source image
-func (r *Runtime) Tag(ctx context.Context, source, target string) error {
+func (r *Runtime) Tag(ctx context.Context, srcRef, target string) error {
 	// find the source image
-	srcName, err := r.FindImage(ctx, source)
-	if err != nil {
-		return err
-	}
-	srcImg, err := r.imagestore.Get(ctx, srcName)
+	srcImg, err := r.GetImage(ctx, srcRef)
 	if err != nil {
 		return err
 	}
 	// create or update target image referencing same target descriptor
 	newImg := images.Image{
 		Name:      target,
-		Target:    srcImg.Target,
+		Target:    srcImg.Image.Target,
 		UpdatedAt: time.Now(),
 	}
 	if _, err := r.UpdateImage(ctx, newImg); err != nil {
 		return err
 	}
-	r.Infof("Tagged image %s as %s", source, target)
+	r.Infof("Tagged image %s as %s", srcImg.Image.Name, target)
 	return nil
 }
 

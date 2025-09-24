@@ -8,7 +8,7 @@ import (
 
 func NewCmdTag() *cobra.Command {
 	var tagCmd = &cobra.Command{
-		Use:   "tag SOURCE_IMAGE TARGET_IMAGE",
+		Use:   "tag SOURCE_IMAGE_REF TARGET_IMAGE",
 		Short: "Create a new tag for an existing image",
 		Args:  cobra.ExactArgs(2),
 		RunE:  tagAction,
@@ -21,7 +21,7 @@ func tagAction(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	opts.SourceImage = args[0]
+	opts.SourceImageRef = args[0]
 	opts.TargetImage = args[1]
 
 	r, err := runtime.NewRuntime(cmd.Context(), opts.RootOptions)
@@ -30,7 +30,7 @@ func tagAction(cmd *cobra.Command, args []string) error {
 	}
 	defer r.Close()
 
-	if err := r.Tag(r.Context(), opts.SourceImage, opts.TargetImage); err != nil {
+	if err := r.Tag(r.Context(), opts.SourceImageRef, opts.TargetImage); err != nil {
 		return err
 	}
 	return nil

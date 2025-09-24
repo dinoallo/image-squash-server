@@ -42,8 +42,8 @@ type RemoteOptions struct {
 
 type TagOptions struct {
 	RootOptions
-	SourceImage string `json:"source_image"`
-	TargetImage string `json:"target_image"`
+	SourceImageRef string `json:"source_image_ref"`
+	TargetImage    string `json:"target_image"`
 }
 
 type RootOptions struct {
