@@ -9,6 +9,8 @@ CMD_DIR := ./cmd/cli
 OUT_DIR := bin
 GO ?= go
 
+GIT_COMMIT := $(shell git rev-parse --short HEAD)
+BUILD_LDFLAGS := -ldflags "-X 'github.com/lingdie/image-manip-server/cmd/cli/cmd.GitCommit=$(GIT_COMMIT)'"
 # Default target
 .PHONY: all
 all: build
@@ -18,7 +20,7 @@ build: $(OUT_DIR)/$(BINARY)
 
 $(OUT_DIR)/$(BINARY): $(shell find . -name '*.go' -not -path './vendor/*')
 	@mkdir -p $(OUT_DIR)
-	$(GO) build -o $(OUT_DIR)/$(BINARY) $(CMD_DIR)
+	$(GO) build $(BUILD_LDFLAGS) -o $(OUT_DIR)/$(BINARY) $(CMD_DIR)
 	@echo "Built $(OUT_DIR)/$(BINARY)"
 
 .PHONY: build-all

@@ -28,6 +28,7 @@ func New() *cobra.Command {
 	rootCmd.AddCommand(NewCmdVerifyBase())
 	rootCmd.AddCommand(NewCmdHistory())
 	rootCmd.AddCommand(NewCmdSquash())
+	rootCmd.AddCommand(NewCmdVersion())
 
 	return rootCmd
 }
