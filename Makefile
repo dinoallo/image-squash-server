@@ -1,3 +1,5 @@
+# Install prefix (default: /usr/local/bin)
+PREFIX ?= /usr/local/bin
 # Simple Makefile for image-manip CLI
 # Generated to build binaries into bin/
 
@@ -60,3 +62,10 @@ lint: vet fmt
 .PHONY: check
 check:
 	$(GO) build ./...
+
+# Install the binary to PREFIX
+.PHONY: install
+install: build
+	install -d $(PREFIX)
+	install bin/$(BINARY) $(PREFIX)/$(BINARY)
+	@echo "Installed $(BINARY) to $(PREFIX)/$(BINARY)"
