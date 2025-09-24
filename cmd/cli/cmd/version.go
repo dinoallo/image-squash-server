@@ -16,7 +16,8 @@ func NewCmdVersion() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version (git commit sha)",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println(GitCommit)
+			versionStr := fmt.Sprintf("image-manip %s", GitCommit)
+			fmt.Println(versionStr)
 		},
 	}
 }
