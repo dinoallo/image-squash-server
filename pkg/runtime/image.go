@@ -41,7 +41,8 @@ func (r *Runtime) FindImage(ctx context.Context, imageRef string) (string, error
 	if matchCount < 1 {
 		return "", fmt.Errorf("image %q not found", imageRef)
 	} else if matchCount > 1 {
-		return "", fmt.Errorf("multiple images found for %q", imageRef)
+		r.Infof("multiple images found for %q", imageRef)
+		return srcName, nil
 	}
 	return srcName, nil
 }
