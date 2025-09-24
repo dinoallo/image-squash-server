@@ -40,6 +40,12 @@ type RemoteOptions struct {
 	Insecure bool `json:"insecure"`
 }
 
+type TagOptions struct {
+	RootOptions
+	SourceImage string `json:"source_image"`
+	TargetImage string `json:"target_image"`
+}
+
 type RootOptions struct {
 	ContainerdAddress string `json:"containerd_address"`
 	Namespace         string `json:"namespace"`

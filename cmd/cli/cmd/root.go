@@ -30,6 +30,7 @@ func New() *cobra.Command {
 	rootCmd.AddCommand(NewCmdSquash())
 	rootCmd.AddCommand(NewCmdVersion())
 	rootCmd.AddCommand(NewCmdRemote())
+	rootCmd.AddCommand(NewCmdTag())
 
 	return rootCmd
 }

@@ -88,6 +88,30 @@ func (r *Runtime) UpdateImage(ctx context.Context, img images.Image) (images.Ima
 	return newImg, nil
 }
 
+// Tag creates a new image name (tag) pointing to the same target as source image
+func (r *Runtime) Tag(ctx context.Context, source, target string) error {
+	// find the source image
+	srcName, err := r.FindImage(ctx, source)
+	if err != nil {
+		return err
+	}
+	srcImg, err := r.imagestore.Get(ctx, srcName)
+	if err != nil {
+		return err
+	}
+	// create or update target image referencing same target descriptor
+	newImg := images.Image{
+		Name:      target,
+		Target:    srcImg.Target,
+		UpdatedAt: time.Now(),
+	}
+	if _, err := r.UpdateImage(ctx, newImg); err != nil {
+		return err
+	}
+	r.Infof("Tagged image %s as %s", source, target)
+	return nil
+}
+
 func (r *Runtime) UnpackImage(ctx context.Context, img images.Image, manifestDesc ocispec.Descriptor) error {
 	cimg := containerd.NewImage(r.client, img)
 	// unpack image to the snapshot storage
