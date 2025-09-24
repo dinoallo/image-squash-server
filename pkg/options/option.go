@@ -35,6 +35,11 @@ type SearchHistoryOptions struct {
 	Keyword string `json:"keyword"`
 }
 
+type RemoteOptions struct {
+	RootOptions
+	Insecure bool `json:"insecure"`
+}
+
 type RootOptions struct {
 	ContainerdAddress string `json:"containerd_address"`
 	Namespace         string `json:"namespace"`
