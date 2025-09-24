@@ -12,7 +12,7 @@ func NewCmdRemote() *cobra.Command {
 		Short: "Interact with remote image registries",
 	}
 	remoteCmd.AddCommand(newCmdListTags())
-	remoteCmd.Flags().Bool("insecure", false, "Allow insecure connections to registries (HTTP)")
+	remoteCmd.PersistentFlags().Bool("insecure", false, "Allow insecure connections to registries (HTTP)")
 	return remoteCmd
 }
 
