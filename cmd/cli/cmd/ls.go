@@ -38,16 +38,49 @@ Properties:
 			return r.ListImages(r.Context(), opts)
 		},
 	}
+	cmd.Flags().BoolP("quiet", "q", false, "Only show numeric IDs")
+	cmd.Flags().BoolP("no-trunc", "", false, "Don't truncate output")
+	cmd.Flags().StringP("format", "", "", "Pretty-print images using a Go template")
+	cmd.Flags().BoolP("names", "", false, "Show image names without parsing as repository and tag")
+	cmd.Flags().BoolP("digests", "", false, "Show image digests")
+	cmd.Flags().BoolP("all", "a", true, "(unimplemented yet, always true)")
 	cmd.Flags().StringVar(&sortBy, "sort", "", "Sort output by 'created' or 'size' (desc)")
 	cmd.Flags().StringSliceP("filter", "f", []string{}, "Filter output based on conditions provided")
 	cmd.RegisterFlagCompletionFunc("sort", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"created", "size"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"table", "raw", "json"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	return cmd
 }
 
 func processListCmdFlags(cmd *cobra.Command) (types.ImageListOptions, error) {
 	root, err := processRootCmdFlags(cmd)
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	quiet, err := cmd.Flags().GetBool("quiet")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	noTrunc, err := cmd.Flags().GetBool("no-trunc")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	format, err := cmd.Flags().GetString("format")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	names, err := cmd.Flags().GetBool("names")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	digests, err := cmd.Flags().GetBool("digests")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	all, err := cmd.Flags().GetBool("all")
 	if err != nil {
 		return types.ImageListOptions{}, err
 	}
@@ -62,13 +95,13 @@ func processListCmdFlags(cmd *cobra.Command) (types.ImageListOptions, error) {
 	return types.ImageListOptions{
 		RootOptions: root,
 		Stdout:      cmd.OutOrStdout(),
-		Quiet:       false,
-		NoTrunc:     false,
-		Format:      "",
+		Quiet:       quiet,
+		NoTrunc:     noTrunc,
+		Format:      format,
 		Filters:     filters,
-		Digests:     false,
-		Names:       false,
-		All:         true,
+		Digests:     digests,
+		Names:       names,
+		All:         all,
 		SortBy:      sortBy,
 	}, nil
 }

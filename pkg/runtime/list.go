@@ -55,7 +55,7 @@ func (r *Runtime) ListImages(ctx context.Context, opts types.ImageListOptions) e
 			return err
 		}
 	}
-	imageAttrList, err := r.GetImageAttrList(ctx, imageList)
+	imageAttrList, err := r.GetImageAttrList(ctx, imageList, opts.Names)
 	if err != nil {
 		return err
 	}
@@ -151,7 +151,7 @@ func handleSortBy(imageAttrList []imageAttr, sortBy string) {
 	}
 }
 
-func (r *Runtime) GetImageAttrList(ctx context.Context, imageList []images.Image) ([]imageAttr, error) {
+func (r *Runtime) GetImageAttrList(ctx context.Context, imageList []images.Image, showOnlyNames bool) ([]imageAttr, error) {
 	var imageAttrList []imageAttr
 	for _, containerImage := range imageList {
 		clientImage := containerd.NewImage(r.client, containerImage)
@@ -191,7 +191,8 @@ func (r *Runtime) GetImageAttrList(ctx context.Context, imageList []images.Image
 				tag        string
 			)
 			// cri plugin will create an image named digest of image's config, skip parsing.
-			if configDesc.Digest.String() != containerImage.Name {
+			// But if --names is specified, always show the name without parsing.
+			if showOnlyNames || configDesc.Digest.String() != containerImage.Name {
 				repository, tag = imgutil.ParseRepoTag(containerImage.Name)
 			}
 			imgAttr := imageAttr{
