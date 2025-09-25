@@ -45,12 +45,71 @@ type platformSpecificAttr struct {
 
 // ListImages prints images with columns: REPOSITORY, TAG, IMAGE ID, CREATED, PLATFORM, SIZE, BLOB SIZE
 func (r *Runtime) ListImages(ctx context.Context, opts types.ImageListOptions) error {
-	imageAttrList, err := r.GetImageAttrList(ctx)
+	imageList, err := r.imagestore.List(ctx, opts.NameAndRefFilter...)
+	if err != nil {
+		return err
+	}
+	if len(opts.Filters) > 0 {
+		imageList, err = r.filterImages(ctx, imageList, opts.Filters)
+		if err != nil {
+			return err
+		}
+	}
+	imageAttrList, err := r.GetImageAttrList(ctx, imageList)
 	if err != nil {
 		return err
 	}
 	handleSortBy(imageAttrList, opts.SortBy)
 	return r.printImages(imageAttrList, opts)
+}
+
+// Supported filters:
+// - before=<image>[:<tag>]: Images created before given image (exclusive)
+// - since=<image>[:<tag>]: Images created after given image (exclusive)
+// - label=<key>[=<value>]: Matches images based on the presence of a label alone or a label and a value
+// - dangling=true: Filter images by dangling
+// - reference=<image>[:<tag>]: Filter images by reference (Matches both docker compatible wildcard pattern and regexp)
+// - size=<operator><size>[<unit>]: Filter images based on size. Supported operators: >, >=, <, <=, =, ==. Supported units (case-insensitive): B, KB, KiB, MB, MiB, GB, GiB, TB, TiB. If unit is omitted, bytes are assumed.
+func (r *Runtime) filterImages(ctx context.Context, imageList []images.Image, filters []string) ([]images.Image, error) {
+	f, err := ParseFilters(filters)
+	if err != nil {
+		return nil, err
+	}
+
+	if f.Dangling != nil {
+		imageList = FilterDangling(imageList, *f.Dangling)
+	}
+
+	imageList, err = FilterByLabel(ctx, r.client, imageList, f.Labels)
+	if err != nil {
+		return nil, err
+	}
+
+	imageList, err = FilterByReference(imageList, f.Reference)
+	if err != nil {
+		return nil, err
+	}
+	imageList, err = FilterBySize(ctx, r.client, r.snapshotter, imageList, f.Size)
+	if err != nil {
+		return nil, err
+	}
+
+	var beforeImages []images.Image
+	if len(f.Before) > 0 {
+		beforeImages, err = r.imagestore.List(ctx, f.Before...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var sinceImages []images.Image
+	if len(f.Since) > 0 {
+		sinceImages, err = r.imagestore.List(ctx, f.Since...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	imageList = FilterImages(imageList, beforeImages, sinceImages)
+	return imageList, nil
 }
 
 func handleSortBy(imageAttrList []imageAttr, sortBy string) {
@@ -92,11 +151,7 @@ func handleSortBy(imageAttrList []imageAttr, sortBy string) {
 	}
 }
 
-func (r *Runtime) GetImageAttrList(ctx context.Context) ([]imageAttr, error) {
-	imageList, err := r.imagestore.List(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (r *Runtime) GetImageAttrList(ctx context.Context, imageList []images.Image) ([]imageAttr, error) {
 	var imageAttrList []imageAttr
 	for _, containerImage := range imageList {
 		clientImage := containerd.NewImage(r.client, containerImage)

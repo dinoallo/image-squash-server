@@ -39,6 +39,7 @@ Properties:
 		},
 	}
 	cmd.Flags().StringVar(&sortBy, "sort", "", "Sort output by 'created' or 'size' (desc)")
+	cmd.Flags().StringSliceP("filter", "f", []string{}, "Filter output based on conditions provided")
 	cmd.RegisterFlagCompletionFunc("sort", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"created", "size"}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -54,13 +55,17 @@ func processListCmdFlags(cmd *cobra.Command) (types.ImageListOptions, error) {
 	if err != nil {
 		return types.ImageListOptions{}, err
 	}
+	filters, err := cmd.Flags().GetStringSlice("filter")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
 	return types.ImageListOptions{
 		RootOptions: root,
 		Stdout:      cmd.OutOrStdout(),
 		Quiet:       false,
 		NoTrunc:     false,
 		Format:      "",
-		Filters:     []string{},
+		Filters:     filters,
 		Digests:     false,
 		Names:       false,
 		All:         true,
