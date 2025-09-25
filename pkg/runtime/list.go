@@ -1,127 +1,68 @@
+// Most of the code in this file is adapted from containerd/nerdctl.
 package runtime
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"path"
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"text/template"
 	"time"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/progress"
 	"github.com/containerd/nerdctl/pkg/formatter"
 	"github.com/containerd/nerdctl/pkg/imgutil"
-	"github.com/opencontainers/image-spec/identity"
+	"github.com/containerd/platforms"
+	"github.com/lingdie/image-manip-server/pkg/api/types"
+	"github.com/opencontainers/go-digest"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type ImageSortKey string
-
-const (
-	SortNone    ImageSortKey = ""
-	SortCreated ImageSortKey = "created"
-	SortSize    ImageSortKey = "size"
-)
-
-type ListImagesOptions struct {
-	SortBy ImageSortKey // "created" or "size"; default none
+type imageAttr struct {
+	CreatedAt time.Time
+	Digest    digest.Digest
+	ID        string
+	Name      string
+	Size      int64
+	PSA       platformSpecificAttr
+	Image     images.Image
 }
 
-type imageRow struct {
-	repo        string
-	tag         string
-	imageID     string
-	createdStr  string
-	createdAt   time.Time
-	platform    string
-	sizeStr     string
-	sizeBytes   int64 // -1 if unknown
-	blobSizeStr string
+type platformSpecificAttr struct {
+	Platform   v1.Platform
+	Config     v1.Descriptor
+	BlobSize   int64
+	Repository string
+	Tag        string
 }
 
 // ListImages prints images with columns: REPOSITORY, TAG, IMAGE ID, CREATED, PLATFORM, SIZE, BLOB SIZE
-func (r *Runtime) ListImages(ctx context.Context, opts ...ListImagesOptions) error {
-	// figure options
-	var opt ListImagesOptions
-	if len(opts) > 0 {
-		opt = opts[0]
-	}
-
-	// fetch all images
-	imageList, err := r.imagestore.List(ctx)
+func (r *Runtime) ListImages(ctx context.Context, opts types.ImageListOptions) error {
+	imageAttrList, err := r.GetImageAttrList(ctx)
 	if err != nil {
 		return err
 	}
+	handleSortBy(imageAttrList, opts.SortBy)
+	return r.printImages(imageAttrList, opts)
+}
 
-	rows := make([]imageRow, 0, len(imageList))
-
-	for _, img := range imageList {
-		repo, tag := parseRepoTag(img.Name)
-		cimg := containerd.NewImage(r.client, img)
-
-		row := imageRow{
-			repo:        repo,
-			tag:         tag,
-			imageID:     "<unknown>",
-			createdStr:  "<unknown>",
-			platform:    "<unknown>",
-			sizeStr:     "-",
-			sizeBytes:   -1,
-			blobSizeStr: "-",
-		}
-
-		manifest, _, err := imgutil.ReadManifest(ctx, cimg)
-		if err == nil && manifest != nil {
-			// BLOB SIZE: sum of compressed layer sizes
-			var blobSize int64
-			for _, l := range manifest.Layers {
-				blobSize += l.Size
-			}
-			row.blobSizeStr = progress.Bytes(blobSize).String()
-		}
-
-		config, configDesc, err := imgutil.ReadImageConfig(ctx, cimg)
-		if err == nil {
-			// IMAGE ID: config digest short
-			if configDesc.Digest != "" {
-				d := configDesc.Digest.Encoded()
-				if len(d) > 12 {
-					d = d[:12]
-				}
-				row.imageID = d
-			}
-			// CREATED
-			if config.Created != nil {
-				row.createdAt = *config.Created
-				row.createdStr = formatter.TimeSinceInHuman(*config.Created)
-			}
-			// PLATFORM
-			arch := strings.TrimSpace(config.Architecture)
-			os := strings.TrimSpace(config.OS)
-			if arch != "" && os != "" {
-				row.platform = fmt.Sprintf("%s/%s", arch, os)
-			}
-			// SIZE: try snapshot size of unpacked rootfs
-			chainID := identity.ChainID(config.RootFS.DiffIDs).String()
-			if chainID != "" {
-				if usage, err := r.snapshotter.Usage(ctx, chainID); err == nil {
-					row.sizeBytes = usage.Size
-					row.sizeStr = progress.Bytes(usage.Size).String()
-				}
-			}
-		}
-
-		rows = append(rows, row)
-	}
-
-	// sort if requested (descending by default)
-	switch opt.SortBy {
-	case SortCreated:
-		sort.Slice(rows, func(i, j int) bool {
-			// newer first; zero times go last
-			ti, tj := rows[i].createdAt, rows[j].createdAt
+func handleSortBy(imageAttrList []imageAttr, sortBy string) {
+	switch sortBy {
+	case "", "none":
+		// do nothing
+	case "created":
+		// newer first; zero times go last
+		sort.Slice(imageAttrList, func(i, j int) bool {
+			ti, tj := imageAttrList[i].CreatedAt, imageAttrList[j].CreatedAt
 			if ti.IsZero() && tj.IsZero() {
-				return rows[i].repo < rows[j].repo
+				return imageAttrList[i].Name < imageAttrList[j].Name
 			}
 			if ti.IsZero() {
 				return false
@@ -131,12 +72,12 @@ func (r *Runtime) ListImages(ctx context.Context, opts ...ListImagesOptions) err
 			}
 			return ti.After(tj)
 		})
-	case SortSize:
-		sort.Slice(rows, func(i, j int) bool {
-			// larger first; unknown (-1) goes last
-			si, sj := rows[i].sizeBytes, rows[j].sizeBytes
+	case "size":
+		// larger first; unknown (-1) goes last
+		sort.Slice(imageAttrList, func(i, j int) bool {
+			si, sj := imageAttrList[i].Size, imageAttrList[j].Size
 			if si == sj {
-				return rows[i].repo < rows[j].repo
+				return imageAttrList[i].Name < imageAttrList[j].Name
 			}
 			if si < 0 {
 				return false
@@ -146,31 +87,219 @@ func (r *Runtime) ListImages(ctx context.Context, opts ...ListImagesOptions) err
 			}
 			return si > sj
 		})
+	default:
+		// do nothing
 	}
-
-	tw := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "REPOSITORY\tTAG\tIMAGE ID\tCREATED\tPLATFORM\tSIZE\tBLOB SIZE")
-	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			row.repo, row.tag, row.imageID, row.createdStr, row.platform, row.sizeStr, row.blobSizeStr,
-		)
-	}
-	return tw.Flush()
 }
 
-func parseRepoTag(name string) (string, string) {
-	if name == "" {
-		return "<none>", "<none>"
+func (r *Runtime) GetImageAttrList(ctx context.Context) ([]imageAttr, error) {
+	imageList, err := r.imagestore.List(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// digest reference
-	if i := strings.Index(name, "@"); i >= 0 {
-		return name[:i], "<none>"
+	var imageAttrList []imageAttr
+	for _, containerImage := range imageList {
+		clientImage := containerd.NewImage(r.client, containerImage)
+		size, err := imgutil.UnpackedImageSize(ctx, r.snapshotter, clientImage)
+		if err != nil {
+			r.Warnf("failed to get unpacked size of image %q: %v", containerImage.Name, err)
+			size = 0
+		}
+		ociPlatforms, err := images.Platforms(ctx, r.contentstore, containerImage.Target)
+		if err != nil {
+			r.Warnf("failed to get the platform list of image %q: %v", containerImage.Name, err)
+			ociPlatforms = []v1.Platform{platforms.DefaultSpec()}
+		}
+		psm := map[string]struct{}{}
+		for _, ociPlatform := range ociPlatforms {
+			platformKey := makePlatformKey(ociPlatform)
+			if _, done := psm[platformKey]; done {
+				continue
+			}
+			psm[platformKey] = struct{}{}
+			if avail, _, _, _, availErr := images.Check(ctx, r.contentstore, containerImage.Target, platforms.OnlyStrict(ociPlatform)); !avail {
+				r.Debugf("skipping image %q: %v", containerImage.Name, availErr)
+				continue
+			}
+			blobSize, err := clientImage.Size(ctx)
+			if err != nil {
+				r.Warnf("failed to get blob size of image %q for platform %q: %v", containerImage.Name, platforms.Format(ociPlatform), err)
+				blobSize = 0
+			}
+			configDesc, err := clientImage.Config(ctx)
+			if err != nil {
+				r.Warnf("failed to get config descriptor of image %q for platform %q: %v", containerImage.Name, platforms.Format(ociPlatform), err)
+				configDesc = v1.Descriptor{}
+			}
+			var (
+				repository string
+				tag        string
+			)
+			// cri plugin will create an image named digest of image's config, skip parsing.
+			if configDesc.Digest.String() != containerImage.Name {
+				repository, tag = imgutil.ParseRepoTag(containerImage.Name)
+			}
+			imgAttr := imageAttr{
+				CreatedAt: containerImage.CreatedAt,
+				Digest:    containerImage.Target.Digest,
+				ID:        containerImage.Target.Digest.String(),
+				Name:      containerImage.Name,
+				Image:     containerImage,
+				Size:      size,
+				PSA: platformSpecificAttr{
+					BlobSize:   blobSize,
+					Platform:   ociPlatform,
+					Config:     configDesc,
+					Repository: repository,
+					Tag:        tag,
+				},
+			}
+			imageAttrList = append(imageAttrList, imgAttr)
+		}
 	}
-	// tag reference, last colon after last slash
-	lastSlash := strings.LastIndex(name, "/")
-	lastColon := strings.LastIndex(name, ":")
-	if lastColon > lastSlash && lastColon >= 0 {
-		return name[:lastColon], name[lastColon+1:]
+	return imageAttrList, nil
+}
+
+type imagePrintable struct {
+	// TODO: "Containers"
+	CreatedAt    string
+	CreatedSince string
+	Digest       string // "<none>" or image target digest (i.e., index digest or manifest digest)
+	ID           string // image target digest (not config digest, unlike Docker), or its short form
+	Repository   string
+	Tag          string // "<none>" or tag
+	Name         string // image name
+	Size         string // the size of the unpacked snapshots.
+	BlobSize     string // the size of the blobs in the content store (nerdctl extension)
+	// TODO: "SharedSize", "UniqueSize"
+	Platform string // nerdctl extension
+}
+
+func (r *Runtime) printImages(imageAttrList []imageAttr, options types.ImageListOptions) error {
+	w := options.Stdout
+	digestsFlag := options.Digests
+	if options.Format == "wide" {
+		digestsFlag = true
 	}
-	return name, "<none>"
+	var tmpl *template.Template
+	switch options.Format {
+	case "", "table", "wide":
+		w = tabwriter.NewWriter(w, 4, 8, 4, ' ', 0)
+		if !options.Quiet {
+			printHeader := ""
+			if options.Names {
+				printHeader += "NAME\t"
+			} else {
+				printHeader += "REPOSITORY\tTAG\t"
+			}
+			if digestsFlag {
+				printHeader += "DIGEST\t"
+			}
+			printHeader += "IMAGE ID\tCREATED\tPLATFORM\tSIZE\tBLOB SIZE"
+			fmt.Fprintln(w, printHeader)
+		}
+	case "raw":
+		return errors.New("unsupported format: \"raw\"")
+	default:
+		if options.Quiet {
+			return errors.New("format and quiet must not be specified together")
+		}
+		var err error
+		tmpl, err = formatter.ParseTemplate(options.Format)
+		if err != nil {
+			return err
+		}
+	}
+
+	printer := &imagePrinter{
+		w:           w,
+		quiet:       options.Quiet,
+		noTrunc:     options.NoTrunc,
+		digestsFlag: digestsFlag,
+		namesFlag:   options.Names,
+		tmpl:        tmpl,
+	}
+
+	for _, imgAttr := range imageAttrList {
+		if err := printer.printImageSinglePlatform(imgAttr); err != nil {
+			r.Warn(err)
+		}
+	}
+	if f, ok := w.(formatter.Flusher); ok {
+		return f.Flush()
+	}
+	return nil
+}
+
+type imagePrinter struct {
+	w                                      io.Writer
+	quiet, noTrunc, digestsFlag, namesFlag bool
+	tmpl                                   *template.Template
+}
+
+func makePlatformKey(platform v1.Platform) string {
+	if platform.OS == "" {
+		return "unknown"
+	}
+
+	return path.Join(platform.OS, platform.Architecture, platform.OSVersion, platform.Variant)
+}
+
+func (x *imagePrinter) printImageSinglePlatform(imgAttr imageAttr) error {
+	p := imagePrintable{
+		CreatedAt:    imgAttr.CreatedAt.Round(time.Second).Local().String(), // format like "2021-08-07 02:19:45 +0900 JST"
+		CreatedSince: formatter.TimeSinceInHuman(imgAttr.CreatedAt),
+		Digest:       imgAttr.Digest.String(),
+		ID:           imgAttr.ID,
+		Repository:   imgAttr.PSA.Repository,
+		Tag:          imgAttr.PSA.Tag,
+		Name:         imgAttr.Name,
+		Size:         progress.Bytes(imgAttr.Size).String(),
+		BlobSize:     progress.Bytes(imgAttr.PSA.BlobSize).String(),
+		Platform:     platforms.Format(imgAttr.PSA.Platform),
+	}
+	if p.Repository == "" {
+		p.Repository = "<none>"
+	}
+	if p.Tag == "" {
+		p.Tag = "<none>" // for Docker compatibility
+	}
+	if !x.noTrunc {
+		// p.Digest does not need to be truncated
+		p.ID = strings.Split(p.ID, ":")[1][:12]
+	}
+	if x.tmpl != nil {
+		var b bytes.Buffer
+		if err := x.tmpl.Execute(&b, p); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(x.w, b.String()); err != nil {
+			return err
+		}
+	} else if x.quiet {
+		if _, err := fmt.Fprintln(x.w, p.ID); err != nil {
+			return err
+		}
+	} else {
+		format := ""
+		args := []interface{}{}
+		if x.namesFlag {
+			format += "%s\t"
+			args = append(args, p.Name)
+		} else {
+			format += "%s\t%s\t"
+			args = append(args, p.Repository, p.Tag)
+		}
+		if x.digestsFlag {
+			format += "%s\t"
+			args = append(args, p.Digest)
+		}
+
+		format += "%s\t%s\t%s\t%s\t%s\n"
+		args = append(args, p.ID, p.CreatedSince, p.Platform, p.Size, p.BlobSize)
+		if _, err := fmt.Fprintf(x.w, format, args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

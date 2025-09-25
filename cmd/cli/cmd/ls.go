@@ -1,41 +1,41 @@
 package cmd
 
 import (
-	"fmt"
-	"strings"
-
+	"github.com/lingdie/image-manip-server/pkg/api/types"
 	"github.com/lingdie/image-manip-server/pkg/runtime"
 	"github.com/spf13/cobra"
 )
 
 func NewCmdLs() *cobra.Command {
+	shortHelp := "List images"
+	longHelp := shortHelp + `
+
+Properties:
+- REPOSITORY: Repository
+- TAG:        Tag
+- NAME:       Name of the image, --names for skip parsing as repository and tag.
+- IMAGE ID:   OCI Digest. Usually different from Docker image ID. Shared for multi-platform images.
+- CREATED:    Created time
+- PLATFORM:   Platform
+- SIZE:       Size of the unpacked snapshots
+- BLOB SIZE:  Size of the blobs (such as layer tarballs) in the content store
+`
 	var sortBy string
 	cmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List images",
+		Short: shortHelp,
+		Long:  longHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := processRootCmdFlags(cmd)
+			opts, err := processListCmdFlags(cmd)
 			if err != nil {
 				return err
 			}
-			r, err := runtime.NewRuntime(cmd.Context(), root)
+			r, err := runtime.NewRuntime(cmd.Context(), opts.RootOptions)
 			if err != nil {
 				return err
 			}
 			defer r.Close()
-
-			var opt runtime.ListImagesOptions
-			switch strings.ToLower(sortBy) {
-			case "", "none":
-				opt.SortBy = runtime.SortNone
-			case "created":
-				opt.SortBy = runtime.SortCreated
-			case "size":
-				opt.SortBy = runtime.SortSize
-			default:
-				return fmt.Errorf("unknown sort key: %s (allowed: created, size)", sortBy)
-			}
-			return r.ListImages(r.Context(), opt)
+			return r.ListImages(r.Context(), opts)
 		},
 	}
 	cmd.Flags().StringVar(&sortBy, "sort", "", "Sort output by 'created' or 'size' (desc)")
@@ -43,4 +43,27 @@ func NewCmdLs() *cobra.Command {
 		return []string{"created", "size"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	return cmd
+}
+
+func processListCmdFlags(cmd *cobra.Command) (types.ImageListOptions, error) {
+	root, err := processRootCmdFlags(cmd)
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	sortBy, err := cmd.Flags().GetString("sort")
+	if err != nil {
+		return types.ImageListOptions{}, err
+	}
+	return types.ImageListOptions{
+		RootOptions: root,
+		Stdout:      cmd.OutOrStdout(),
+		Quiet:       false,
+		NoTrunc:     false,
+		Format:      "",
+		Filters:     []string{},
+		Digests:     false,
+		Names:       false,
+		All:         true,
+		SortBy:      sortBy,
+	}, nil
 }
